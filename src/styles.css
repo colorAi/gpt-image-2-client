@@ -852,6 +852,43 @@ textarea:focus {
   transform: translateY(-1px);
 }
 
+.image-card-action {
+  position: absolute;
+  left: 8px;
+  z-index: 2;
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.74);
+  color: white;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+  transition: transform 0.14s ease, background 0.14s ease;
+}
+
+.image-card-action.edit {
+  top: 8px;
+}
+
+.image-card-action.retry {
+  bottom: 8px;
+  background: rgba(16, 112, 202, 0.9);
+}
+
+.image-card-action:hover,
+.image-card-action:focus-visible {
+  background: #111827;
+  transform: translateY(-1px);
+}
+
+.image-card-action.retry:hover,
+.image-card-action.retry:focus-visible {
+  background: #175cd3;
+}
+
 .image-preview.placeholder {
   display: flex;
   color: #667085;

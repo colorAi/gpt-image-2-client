@@ -5,11 +5,13 @@ import {
   ChevronRight,
   ChevronUp,
   Copy,
+  FilePenLine,
   FolderOpen,
   Image as ImageIcon,
   KeyRound,
   LoaderCircle,
   Paintbrush,
+  RotateCcw,
   Save,
   Send,
   Settings,
@@ -53,6 +55,7 @@ type TaskRecord = ImageTask & {
   localSortKey?: string;
   savedFiles?: string[];
   localSaveError?: string;
+  previewLoadError?: string;
 };
 
 type LocalResultRecord = {
@@ -61,6 +64,7 @@ type LocalResultRecord = {
   name: string;
   path: string;
   url: string;
+  originalUrl: string;
   prompt?: string;
   created_at: string;
   localCreatedAt: string;
@@ -77,6 +81,10 @@ type NativeLocalImage = {
   path: string;
   dataUrl?: string;
   data_url?: string;
+  thumbnailDataUrl?: string;
+  thumbnail_data_url?: string;
+  thumbnailPath?: string;
+  thumbnail_path?: string;
   prompt?: string;
   createdAt?: string;
   created_at?: string;
@@ -143,6 +151,13 @@ type PendingPromptJob = {
   localSortKey: string;
 };
 
+type SubmitPromptOptions = {
+  files?: File[];
+  model?: string;
+  size?: string;
+  quality?: string;
+};
+
 type PromptQueueStats = {
   waiting: number;
   running: number;
@@ -180,6 +195,7 @@ const maxReferenceImageEdge = 2048;
 const referenceImageSizeThreshold = 5 * 1024 * 1024;
 const referenceImageJpegQuality = 0.9;
 const maxClientBatchConcurrency = 5;
+const maxPreviewHydrateAttempts = 5;
 const localResultPageSizeOptions = [10, 20, 50];
 const taskStatusLabels: Record<ImageTask["status"], string> = {
   queued: "排队中",
@@ -307,8 +323,12 @@ function localDataUrlFromImageItem(item: { b64_json?: string; url?: string }) {
   return item.b64_json ? `data:image/png;base64,${item.b64_json}` : "";
 }
 
-function hasRemoteOnlyImageData(task: Pick<ImageTask, "data" | "status">) {
+function hasRemoteOnlyImageData(task: Pick<TaskRecord, "data" | "status">) {
   return task.status === "success" && Boolean(task.data?.some((item) => item.url && !item.b64_json));
+}
+
+function hasPendingPreviewHydration(task: Pick<TaskRecord, "data" | "status" | "previewLoadError">) {
+  return !task.previewLoadError && hasRemoteOnlyImageData(task);
 }
 
 function formatSize(size: number) {
@@ -318,6 +338,11 @@ function formatSize(size: number) {
 
 function formatResolution(width?: number, height?: number) {
   return width && height ? `${width} x ${height}` : "--";
+}
+
+function aspectLabelFromSize(size?: string) {
+  if (!size) return "";
+  return aspectOptions.find((item) => item.size === size)?.label || "";
 }
 
 function compactLocalResultTitle(item: Pick<LocalResultRecord, "name" | "localCreatedAt">) {
@@ -346,12 +371,18 @@ function isDirectoryAccessError(error: unknown) {
 }
 
 function nativeLocalImageToRecord(item: NativeLocalImage): LocalResultRecord {
+  const originalUrl = convertFileSrc(item.path);
+  const thumbnailPath = item.thumbnail_path || item.thumbnailPath || "";
+  const thumbnailUrl = thumbnailPath
+    ? convertFileSrc(thumbnailPath)
+    : item.thumbnail_data_url || item.thumbnailDataUrl || item.data_url || item.dataUrl || originalUrl;
   return {
     id: item.id,
     rel: item.rel,
     name: item.name,
     path: item.path,
-    url: item.data_url || item.dataUrl || convertFileSrc(item.path),
+    url: thumbnailUrl,
+    originalUrl,
     prompt: item.prompt || "",
     created_at: item.created_at || item.createdAt || "",
     localCreatedAt: item.local_created_at || item.localCreatedAt || "",
@@ -380,6 +411,16 @@ function shouldReleasePromptQueueSlot(task: ImageTask) {
   return terminalStatuses.has(task.status) || Boolean(task.progress && promptQueueReleaseProgresses.has(task.progress));
 }
 
+function compactTaskForStorage(task: TaskRecord) {
+  const data = task.data
+    ?.map((item) => item.url ? { url: item.url } : null)
+    .filter((item): item is { url: string } => Boolean(item));
+  return {
+    ...task,
+    ...(data?.length ? { data } : { data: undefined }),
+  };
+}
+
 function localSortKey(batchId: number, index: number) {
   return `${batchId}-${String(index).padStart(4, "0")}`;
 }
@@ -394,10 +435,6 @@ function progressText(value?: string) {
   const key = text.toLowerCase();
   if (progressTextLabels[key]) return progressTextLabels[key];
   return key.includes("_") ? "处理中" : text;
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function localDateString(date = new Date()) {
@@ -599,7 +636,7 @@ export default function App() {
                   <button className="icon-btn danger" onClick={clearDirectory} disabled={!resultDir} title="取消本地目录"><X size={16} /></button>
                 </div>
                 <div className={`local-status ${resultDir ? "ok" : ""}`}>
-                  {resultDir ? directoryMessage || `已选择：${resultDir}` : "未选择目录，任务结果会保存在应用记录中；选择后将直接落盘"}
+                  {resultDir ? directoryMessage || `已选择：${resultDir}` : "未选择目录时不能提交任务；选择后结果会直接落盘并生成缩略图"}
                 </div>
               </div>
             </div>
@@ -699,8 +736,13 @@ function GenerateView({
   const hydratingTaskIds = useRef(new Set<string>());
   const failedHydrateTaskIds = useRef(new Set<string>());
   const localLoadSeq = useRef(0);
+  const saveTasksTimer = useRef<number | null>(null);
   const pendingPromptJobs = useRef<PendingPromptJob[]>([]);
   const runningPromptJobIds = useRef(new Set<string>());
+  const promptQueueReleaseWaiters = useRef(new Map<string, () => void>());
+  const previewHydrateAttempts = useRef(new Map<string, number>());
+  const previewHydrateRetryAfter = useRef(new Map<string, number>());
+  const previewHydrateRetryTimers = useRef(new Map<string, number>());
   const isPromptQueuePumping = useRef(false);
   const selectedSize = aspectOptions.find((item) => item.label === aspect)?.size || "";
   const activeTaskIds = useMemo(() => tasks.filter(isPollableTask).map((item) => item.id).join(","), [tasks]);
@@ -710,6 +752,31 @@ function GenerateView({
       waiting: pendingPromptJobs.current.length,
       running: runningPromptJobIds.current.size,
     });
+  }, []);
+
+  const releasePromptQueueWaiter = useCallback((task: ImageTask) => {
+    if (!shouldReleasePromptQueueSlot(task)) return;
+    const release = promptQueueReleaseWaiters.current.get(task.id);
+    if (!release) return;
+    promptQueueReleaseWaiters.current.delete(task.id);
+    release();
+  }, []);
+
+  const schedulePreviewHydrateRetry = useCallback((taskId: string, attempt: number) => {
+    if (previewHydrateRetryTimers.current.has(taskId)) return;
+    const delay = Math.min(8000, attempt * 1500);
+    previewHydrateRetryAfter.current.set(taskId, Date.now() + delay);
+    const timer = window.setTimeout(() => {
+      previewHydrateRetryTimers.current.delete(taskId);
+      previewHydrateRetryAfter.current.delete(taskId);
+      setTasks((current) => [...current]);
+    }, delay);
+    previewHydrateRetryTimers.current.set(taskId, timer);
+  }, []);
+
+  useEffect(() => () => {
+    previewHydrateRetryTimers.current.forEach((timer) => window.clearTimeout(timer));
+    previewHydrateRetryTimers.current.clear();
   }, []);
 
   useEffect(() => {
@@ -731,7 +798,19 @@ function GenerateView({
 
   useEffect(() => {
     if (!tasksLoaded) return;
-    void invoke("save_tasks", { tasks: tasks.slice(0, 100) }).catch((error) => notify(getErrorMessage(error), "error"));
+    if (saveTasksTimer.current !== null) {
+      window.clearTimeout(saveTasksTimer.current);
+    }
+    saveTasksTimer.current = window.setTimeout(() => {
+      saveTasksTimer.current = null;
+      void invoke("save_tasks", { tasks: tasks.slice(0, 100).map(compactTaskForStorage) }).catch((error) => notify(getErrorMessage(error), "error"));
+    }, 800);
+    return () => {
+      if (saveTasksTimer.current !== null) {
+        window.clearTimeout(saveTasksTimer.current);
+        saveTasksTimer.current = null;
+      }
+    };
   }, [notify, tasks, tasksLoaded]);
 
   useEffect(() => {
@@ -783,7 +862,6 @@ function GenerateView({
     void loadLocalResults(resultDir, localResultDate, localResultPage, localResultPageSize);
     return () => {
       localLoadSeq.current += 1;
-      setLocalResults([]);
       setIsLocalResultsLoading(false);
     };
   }, [resultDir, localResultDate, localResultPage, localResultPageSize, loadLocalResults]);
@@ -823,11 +901,13 @@ function GenerateView({
   }, [api, loadLocalResults, localResultDate, localResultPage, localResultPageSize, notify, resultDir, tasks]);
 
   useEffect(() => {
+    if (resultDir) return;
+    const now = Date.now();
     const hydrateTargets = tasks.filter((task) =>
-      task.status === "success"
-      && task.data?.some((item) => item.url && !item.b64_json)
+      hasPendingPreviewHydration(task)
       && !hydratingTaskIds.current.has(task.id)
       && !failedHydrateTaskIds.current.has(task.id)
+      && (previewHydrateRetryAfter.current.get(task.id) || 0) <= now
     );
     hydrateTargets.forEach((task) => {
       hydratingTaskIds.current.add(task.id);
@@ -837,15 +917,31 @@ function GenerateView({
           data: task.data || [],
         },
       }).then((data) => {
-        setTasks((current) => current.map((item) => item.id === task.id ? { ...item, data } : item));
+        previewHydrateAttempts.current.delete(task.id);
+        previewHydrateRetryAfter.current.delete(task.id);
+        const retryTimer = previewHydrateRetryTimers.current.get(task.id);
+        if (retryTimer) {
+          window.clearTimeout(retryTimer);
+          previewHydrateRetryTimers.current.delete(task.id);
+        }
+        setTasks((current) => current.map((item) => item.id === task.id ? { ...item, data, previewLoadError: "" } : item));
       }).catch((error) => {
+        const message = getErrorMessage(error);
+        const nextAttempt = (previewHydrateAttempts.current.get(task.id) || 0) + 1;
+        previewHydrateAttempts.current.set(task.id, nextAttempt);
+        if (nextAttempt < maxPreviewHydrateAttempts) {
+          schedulePreviewHydrateRetry(task.id, nextAttempt);
+          return;
+        }
+        previewHydrateAttempts.current.delete(task.id);
+        previewHydrateRetryAfter.current.delete(task.id);
         failedHydrateTaskIds.current.add(task.id);
-        notify(`图片预览加载失败：${getErrorMessage(error)}`, "error");
+        setTasks((current) => current.map((item) => item.id === task.id ? { ...item, previewLoadError: message } : item));
       }).finally(() => {
         hydratingTaskIds.current.delete(task.id);
       });
     });
-  }, [api, notify, tasks]);
+  }, [api, resultDir, schedulePreviewHydrateRetry, tasks]);
 
   useEffect(() => {
     const activeIds = activeTaskIds ? activeTaskIds.split(",") : [];
@@ -859,6 +955,7 @@ function GenerateView({
         const data = await fetchImageTasks(api, activeIds);
         if (cancelled) return;
         const taskMap = new Map(data.items.map((item) => [item.id, item]));
+        data.items.forEach(releasePromptQueueWaiter);
         setTasks((current) => current.map((item) => {
           const next = taskMap.get(item.id);
           return next && shouldApplyTaskUpdate(item, next) ? { ...item, ...next } : item;
@@ -875,7 +972,7 @@ function GenerateView({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [api, activeTaskIds]);
+  }, [api, activeTaskIds, releasePromptQueueWaiter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -962,27 +1059,12 @@ function GenerateView({
     setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index));
   };
 
-  const mergeTaskUpdate = useCallback((next: ImageTask) => {
-    setTasks((current) => current.map((item) => (
-      item.id === next.id && shouldApplyTaskUpdate(item, next) ? { ...item, ...next, isLocalPending: false } : item
-    )));
+  const waitForPromptQueueRelease = useCallback((task: ImageTask) => {
+    if (shouldReleasePromptQueueSlot(task)) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      promptQueueReleaseWaiters.current.set(task.id, resolve);
+    });
   }, []);
-
-  const waitForPromptQueueRelease = useCallback(async (taskId: string) => {
-    while (true) {
-      await sleep(2200);
-      let data: { items: ImageTask[]; missing_ids: string[] };
-      try {
-        data = await fetchImageTasks(api, [taskId]);
-      } catch {
-        continue;
-      }
-      const next = data.items[0];
-      if (!next) return;
-      mergeTaskUpdate(next);
-      if (shouldReleasePromptQueueSlot(next)) return;
-    }
-  }, [api, mergeTaskUpdate]);
 
   const runPromptJob = useCallback(async (job: PendingPromptJob) => {
     try {
@@ -1003,7 +1085,7 @@ function GenerateView({
         const replaced = current.map((item) => item.id === job.id || item.clientTaskId === job.id ? record : item);
         return replaced.some((item) => item.id === record.id) ? replaced : [record, ...replaced].slice(0, 100);
       });
-      await waitForPromptQueueRelease(task.id);
+      await waitForPromptQueueRelease(task);
     } catch (error) {
       setTasks((current) => current.map((item) => item.id === job.id ? {
         ...item,
@@ -1045,7 +1127,11 @@ function GenerateView({
     launchNext();
   }, [notify, runPromptJob, syncQueueStats]);
 
-  const submitPromptList = async (prompts: string[], successSuffix: string) => {
+  const submitPromptList = async (prompts: string[], successSuffix: string, options: SubmitPromptOptions = {}) => {
+    if (!resultDir) {
+      notify("请先在配置中心选择本地结果目录", "error");
+      return;
+    }
     const cleanedPrompts = prompts.map((item) => item.trim()).filter(Boolean);
     if (!cleanedPrompts.length) {
       notify("请输入提示词", "error");
@@ -1055,13 +1141,17 @@ function GenerateView({
     try {
       const startedAt = Date.now();
       const submittedAt = new Date(startedAt);
+      const submitFiles = options.files ?? files;
+      const submitModel = options.model || model;
+      const submitSize = options.size ?? selectedSize;
+      const submitQuality = options.quality || quality;
       const jobs = cleanedPrompts.map((text, index): PendingPromptJob => ({
         id: `${startedAt}-${index}-${Math.random().toString(16).slice(2)}`,
         prompt: text,
-        files: files.slice(),
-        model,
-        size: selectedSize,
-        quality,
+        files: submitFiles.slice(),
+        model: submitModel,
+        size: submitSize,
+        quality: submitQuality,
         localCreatedAt: submittedAt.toLocaleString(),
         localBatchId: startedAt,
         localBatchIndex: index,
@@ -1119,6 +1209,65 @@ function GenerateView({
     }
     await submitPromptList(Array.from({ length: count }, () => text), "可继续提交");
   };
+
+  const fillTaskForEdit = useCallback((task: TaskRecord) => {
+    setPrompt(task.prompt || "");
+    setSplitSubmit(false);
+    setCommonPrompt("");
+    setCount(1);
+    const nextAspect = aspectLabelFromSize(task.size);
+    if (nextAspect) setAspect(nextAspect);
+    if (task.quality && qualityOptions.includes(task.quality)) setQuality(task.quality);
+    if (task.mode === "generate") {
+      setFiles([]);
+    } else if (!files.length) {
+      notify("这条编辑任务的参考图需要重新添加", "info");
+    }
+    notify("任务参数已填回左侧", "success");
+  }, [files.length, notify]);
+
+  const retryTask = useCallback(async (task: TaskRecord) => {
+    if (task.status !== "error") return;
+    const retryPrompt = (task.prompt || "").trim();
+    if (!retryPrompt) {
+      notify("这条任务没有可重新提交的提示词", "error");
+      return;
+    }
+    if (task.mode === "edit" && !files.length) {
+      notify("这条编辑任务需要先重新添加参考图", "error");
+      return;
+    }
+    await submitPromptList([retryPrompt], "已重新提交", {
+      files: task.mode === "edit" ? files.slice() : [],
+      model: task.model || model,
+      size: task.size ?? selectedSize,
+      quality: task.quality || quality,
+    });
+  }, [files, model, notify, quality, selectedSize]);
+
+  const deleteTasksAndFiles = useCallback(async (taskIds: string[]) => {
+    const targets = tasks.filter((task) => taskIds.includes(task.id));
+    if (!targets.length) return false;
+    const savedPaths = targets.flatMap((task) => task.savedFiles || []);
+    const confirmText = savedPaths.length
+      ? `确定删除 ${targets.length} 个任务吗？删除会连同 ${savedPaths.length} 个本地文件一起删除，此操作不可撤销。`
+      : `确定删除 ${targets.length} 个任务记录吗？此操作不可撤销。`;
+    if (!window.confirm(confirmText)) return false;
+    try {
+      let removed = 0;
+      if (savedPaths.length) {
+        if (!resultDir) throw new Error("请先选择本地结果目录");
+        removed = await invoke<number>("delete_local_images", { resultDir, paths: savedPaths });
+        void loadLocalResults(resultDir, localResultDate, localResultPage, localResultPageSize);
+      }
+      setTasks((current) => current.filter((task) => !taskIds.includes(task.id)));
+      notify(savedPaths.length ? `已删除 ${targets.length} 个任务和 ${removed} 张本地图片` : `已删除 ${targets.length} 个任务`, "success");
+      return true;
+    } catch (error) {
+      notify(getErrorMessage(error), "error");
+      return false;
+    }
+  }, [loadLocalResults, localResultDate, localResultPage, localResultPageSize, notify, resultDir, tasks]);
 
   const askAssistant = async () => {
     if (isAssistantLoading) return;
@@ -1291,19 +1440,24 @@ function GenerateView({
           onLocalResultPageChange={setLocalResultPage}
           onLocalResultPageSizeChange={setLocalResultPageSize}
           onUsePrompt={setPrompt}
+          onEditTask={fillTaskForEdit}
+          onRetryTask={retryTask}
           notify={notify}
-          onDelete={(taskIds) => setTasks((current) => current.filter((task) => !taskIds.includes(task.id)))}
+          onDelete={deleteTasksAndFiles}
           onDeleteLocal={async (resultIds) => {
             const targets = localResults.filter((item) => resultIds.includes(item.id));
-            if (!targets.length) return;
+            if (!targets.length) return false;
+            if (!window.confirm(`确定删除 ${targets.length} 张本地图片吗？文件、提示词记录和缩略图都会一起删除，此操作不可撤销。`)) return false;
             try {
               const removed = await invoke<number>("delete_local_images", { resultDir, paths: targets.map((item) => item.path) });
               setLocalResults((current) => current.filter((item) => !resultIds.includes(item.id)));
               setLocalResultTotal((current) => Math.max(0, current - removed));
               void loadLocalResults(resultDir, localResultDate, localResultPage, localResultPageSize);
               notify(`已删除 ${removed} 张本地图片`, "success");
+              return true;
             } catch (error) {
               notify(getErrorMessage(error), "error");
+              return false;
             }
           }}
         />
@@ -1391,6 +1545,8 @@ function TaskResultGrid({
   onLocalResultPageChange,
   onLocalResultPageSizeChange,
   onUsePrompt,
+  onEditTask,
+  onRetryTask,
   notify,
   onDelete,
   onDeleteLocal,
@@ -1409,9 +1565,11 @@ function TaskResultGrid({
   onLocalResultPageChange: (page: number) => void;
   onLocalResultPageSizeChange: (pageSize: number) => void;
   onUsePrompt: (prompt: string) => void;
+  onEditTask: (task: TaskRecord) => void;
+  onRetryTask: (task: TaskRecord) => void | Promise<void>;
   notify: (message: string, tone?: Toast["tone"]) => void;
-  onDelete: (taskIds: string[]) => void;
-  onDeleteLocal: (resultIds: string[]) => Promise<void>;
+  onDelete: (taskIds: string[]) => Promise<boolean>;
+  onDeleteLocal: (resultIds: string[]) => Promise<boolean>;
 }) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
@@ -1434,7 +1592,7 @@ function TaskResultGrid({
     }),
     ...visibleLocalResults.map((item) => ({
       id: item.id,
-      src: item.url,
+      src: item.originalUrl,
       title: compactLocalResultTitle(item),
       prompt: item.prompt || "",
     })),
@@ -1459,17 +1617,19 @@ function TaskResultGrid({
     const taskIds = itemIds.filter((id) => visibleTasks.some((task) => task.id === id));
     const localIds = itemIds.filter((id) => visibleLocalResults.some((item) => item.id === id));
     if (taskIds.length) {
-      onDelete(taskIds);
+      const deleted = await onDelete(taskIds);
+      if (!deleted) return;
     }
     if (localIds.length) {
-      await onDeleteLocal(localIds);
+      const deleted = await onDeleteLocal(localIds);
+      if (!deleted) return;
     }
     setSelected((current) => current.filter((id) => !itemIds.includes(id)));
   };
 
-  const deleteTasks = (taskIds: string[]) => {
-    onDelete(taskIds);
-    setSelected((current) => current.filter((taskId) => !taskIds.includes(taskId)));
+  const deleteTasks = async (taskIds: string[]) => {
+    const deleted = await onDelete(taskIds);
+    if (deleted) setSelected((current) => current.filter((taskId) => !taskIds.includes(taskId)));
   };
 
   return (
@@ -1526,7 +1686,8 @@ function TaskResultGrid({
             {visibleTasks.map((task) => {
               const firstImage = task.data?.map(localDataUrlFromImageItem).find(Boolean) || "";
               const isActive = task.status === "queued" || task.status === "running";
-              const isHydrating = hasRemoteOnlyImageData(task);
+              const isHydrating = hasPendingPreviewHydration(task);
+              const previewStatus = task.previewLoadError && !firstImage && !isActive ? "预览不可用" : progressText(task.progress) || task.localCreatedAt;
               return (
                 <article className="image-card" key={task.id}>
                   <label className="task-select">
@@ -1542,7 +1703,15 @@ function TaskResultGrid({
                       {firstImage ? <img src={firstImage} alt={task.prompt} /> : isActive || isHydrating ? <LoaderCircle size={28} className="spin" /> : <ImageIcon size={30} />}
                       {task.savedFiles?.length ? <span className="saved-badge">已保存</span> : null}
                     </button>
-                    <button className="image-delete" type="button" title="删除" onClick={() => deleteTasks([task.id])}>
+                    <button className="image-card-action edit" type="button" title="编辑这条任务" onClick={() => onEditTask(task)}>
+                      <FilePenLine size={15} />
+                    </button>
+                    {task.status === "error" ? (
+                      <button className="image-card-action retry" type="button" title="重新提交" onClick={() => void onRetryTask(task)}>
+                        <RotateCcw size={15} />
+                      </button>
+                    ) : null}
+                    <button className="image-delete" type="button" title="删除" onClick={() => void deleteTasks([task.id])}>
                       <Trash2 size={15} />
                     </button>
                   </div>
@@ -1552,7 +1721,7 @@ function TaskResultGrid({
                   {task.error ? <p className="task-error">{task.error}</p> : null}
                   {task.localSaveError ? <p className="task-error">本地保存失败：{task.localSaveError}</p> : null}
                   <div className="card-actions">
-                    <span className="task-time">{progressText(task.progress) || task.localCreatedAt}</span>
+                    <span className="task-time">{previewStatus}</span>
                   </div>
                 </article>
               );

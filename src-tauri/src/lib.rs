@@ -1,5 +1,6 @@
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, Local, NaiveDate};
+use image::codecs::jpeg::JpegEncoder;
 use reqwest::{multipart, Client, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -87,7 +88,7 @@ struct LocalImage {
     rel: String,
     name: String,
     path: String,
-    data_url: String,
+    thumbnail_path: Option<String>,
     prompt: Option<String>,
     created_at: String,
     local_created_at: String,
@@ -237,6 +238,38 @@ fn data_url_from_bytes(bytes: &[u8], mime: &str) -> String {
         "data:{mime};base64,{}",
         general_purpose::STANDARD.encode(bytes)
     )
+}
+
+fn thumbnail_bytes_from_image_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
+    let image = image::load_from_memory(bytes).ok()?;
+    let thumbnail = image.thumbnail(640, 640);
+    let mut encoded = Vec::new();
+    let mut encoder = JpegEncoder::new_with_quality(&mut encoded, 78);
+    encoder.encode_image(&thumbnail).ok()?;
+    Some(encoded)
+}
+
+fn thumbnail_path_for_image(path: &Path) -> Option<PathBuf> {
+    let parent = path.parent()?;
+    let filename = path.file_name()?.to_str()?;
+    Some(parent.join(".thumbnails").join(format!("{filename}.jpg")))
+}
+
+fn ensure_thumbnail_file(path: &Path, bytes: &[u8]) -> Option<PathBuf> {
+    let thumbnail_path = thumbnail_path_for_image(path)?;
+    if thumbnail_path.exists() {
+        return Some(thumbnail_path);
+    }
+    let thumbnail_bytes = thumbnail_bytes_from_image_bytes(bytes)?;
+    if let Some(parent) = thumbnail_path.parent() {
+        fs::create_dir_all(parent).ok()?;
+    }
+    fs::write(&thumbnail_path, thumbnail_bytes).ok()?;
+    Some(thumbnail_path)
+}
+
+fn is_thumbnail_artifact(path: &Path) -> bool {
+    path.components().any(|component| component.as_os_str() == ".thumbnails")
 }
 
 fn read_be_u32(bytes: &[u8], start: usize) -> Option<u32> {
@@ -699,6 +732,7 @@ async fn save_task_images(payload: SaveTaskImagesPayload) -> Result<Vec<String>,
         file.write_all(&bytes)
             .await
             .map_err(|error| format!("写入图片文件失败：{error}"))?;
+        let _ = ensure_thumbnail_file(&path, &bytes);
         let metadata = ImageMetadata {
             task_id: payload.task_id.clone(),
             prompt: payload.prompt.clone(),
@@ -781,7 +815,7 @@ fn scan_local_images(
     let mut image_paths = Vec::new();
     for entry in WalkDir::new(&scan_root).into_iter().filter_map(Result::ok) {
         let path = entry.path();
-        if !path.is_file() || !is_image_path(path) {
+        if !path.is_file() || is_thumbnail_artifact(path) || !is_image_path(path) {
             continue;
         }
         let metadata = fs::metadata(path).map_err(|error| format!("读取图片信息失败：{error}"))?;
@@ -826,15 +860,16 @@ fn scan_local_images(
             .unwrap_or("image")
             .to_string();
         let bytes = fs::read(&path).map_err(|error| format!("读取本地图片失败：{error}"))?;
-        let data_url = data_url_from_bytes(&bytes, &image_mime_from_path(&path));
         let (width, height) = image_dimensions_from_bytes(&bytes);
+        let thumbnail_path = ensure_thumbnail_file(&path, &bytes)
+            .map(|value| value.to_string_lossy().to_string());
         let prompt = image_prompt_from_metadata(&path);
         items.push(LocalImage {
             id: format!("local:{rel}"),
             rel,
             name,
             path: path.to_string_lossy().to_string(),
-            data_url,
+            thumbnail_path,
             prompt,
             created_at,
             local_created_at,
@@ -863,13 +898,23 @@ fn delete_local_images(result_dir: String, paths: Vec<String>) -> Result<usize, 
     }
     let mut removed = 0;
     for path in paths {
-        let path = PathBuf::from(path);
+        let input_path = PathBuf::from(path);
+        let path = if input_path.is_absolute() {
+            input_path
+        } else {
+            root.join(input_path)
+        };
         if path.exists() {
             let target = canonical_child_path(&root, &path)?;
             fs::remove_file(&target).map_err(|error| format!("删除本地图片失败：{error}"))?;
             let metadata_path = image_metadata_path(&target);
             if metadata_path.exists() {
                 let _ = fs::remove_file(metadata_path);
+            }
+            if let Some(thumbnail_path) = thumbnail_path_for_image(&target) {
+                if thumbnail_path.exists() {
+                    let _ = fs::remove_file(thumbnail_path);
+                }
             }
             removed += 1;
         }
