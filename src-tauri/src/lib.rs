@@ -173,6 +173,21 @@ fn safe_filename_part(value: &str, max_len: usize) -> String {
     }
 }
 
+fn task_filename_code(task_id: &str) -> String {
+    let clean = task_id.trim();
+    let mut parts = clean.splitn(3, '-');
+    let batch = parts.next().unwrap_or("");
+    let index = parts.next().unwrap_or("");
+    if !batch.is_empty()
+        && !index.is_empty()
+        && batch.chars().all(|ch| ch.is_ascii_digit())
+        && index.chars().all(|ch| ch.is_ascii_digit())
+    {
+        return safe_filename_part(&format!("{batch}-{index}"), 24);
+    }
+    safe_filename_part(clean, 48)
+}
+
 fn parse_data_url(data_url: &str) -> Result<(Vec<u8>, String), String> {
     let (meta, data) = data_url
         .split_once(',')
@@ -717,7 +732,7 @@ async fn save_task_images(payload: SaveTaskImagesPayload) -> Result<Vec<String>,
     for (index, item) in payload.data.iter().enumerate() {
         let bytes = image_item_bytes(&client, &payload.connection, item).await?;
         let extension = safe_filename_part(&extension_for_item(item), 5);
-        let task_code = safe_filename_part(&payload.task_id, 12);
+        let task_code = task_filename_code(&payload.task_id);
         let prefix = format!(
             "{}-{}-{}",
             safe_filename_part(&payload.local_created_at, 40),
