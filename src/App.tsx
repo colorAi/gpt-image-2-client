@@ -7,8 +7,11 @@ import {
   Copy,
   FilePenLine,
   FolderOpen,
+  Eye,
+  EyeOff,
   Image as ImageIcon,
   KeyRound,
+  Languages,
   LoaderCircle,
   Moon,
   Paintbrush,
@@ -791,6 +794,7 @@ function GenerateView({
   const [assistantInput, setAssistantInput] = useState("");
   const [assistantMessages, setAssistantMessages] = useState<PromptAssistantMessage[]>([]);
   const [isAssistantLoading, setIsAssistantLoading] = useState(false);
+  const [isTranslatingPrompt, setIsTranslatingPrompt] = useState(false);
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [tasksLoaded, setTasksLoaded] = useState(false);
   const [localResults, setLocalResults] = useState<LocalResultRecord[]>([]);
@@ -1382,6 +1386,26 @@ function GenerateView({
     }
   };
 
+  const translateCurrentPrompt = async () => {
+    if (isTranslatingPrompt) return;
+    const text = prompt.trim();
+    if (!text) {
+      notify("请输入要翻译的提示词", "error");
+      return;
+    }
+    setIsTranslatingPrompt(true);
+    try {
+      const translated = await translatePromptText(api, text);
+      if (!translated) throw new Error("AI 没有返回翻译结果");
+      setPrompt(translated);
+      notify("提示词已互译", "success");
+    } catch (error) {
+      notify(getErrorMessage(error), "error");
+    } finally {
+      setIsTranslatingPrompt(false);
+    }
+  };
+
   return (
     <section className="view generate-view">
       <div className="generate-layout">
@@ -1501,6 +1525,10 @@ function GenerateView({
             <label><span>比例</span><select value={aspect} onChange={(event) => setAspect(event.target.value)}>{aspectOptions.map((item) => <option key={item.label} value={item.label}>{item.label}</option>)}</select></label>
             <label><span>质量</span><select value={quality} onChange={(event) => setQuality(event.target.value)}>{qualityOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
             <label><span>数量</span><input type="number" min={1} max={4} value={count} disabled={splitSubmit} onChange={(event) => setCount(Math.min(4, Math.max(1, Number(event.target.value) || 1)))} /></label>
+            <button className="btn translate-prompt-button" type="button" onClick={() => void translateCurrentPrompt()} disabled={!prompt.trim() || isTranslatingPrompt}>
+              {isTranslatingPrompt ? <LoaderCircle size={15} className="spin" /> : <Languages size={15} />}
+              翻译
+            </button>
             <button className="btn clear-prompt-button" type="button" onClick={() => setPrompt("")} disabled={!prompt.trim()}>
               <X size={15} />
               清空提示词
@@ -1667,6 +1695,25 @@ async function askPromptAssistant(
   return data.choices?.[0]?.message?.content?.trim() || "";
 }
 
+async function translatePromptText(api: ReturnType<typeof createApiClient>, prompt: string) {
+  const data = await api.request<ChatCompletionResponse>("/v1/chat/completions", {
+    method: "POST",
+    body: {
+      model: "auto",
+      stream: false,
+      modalities: ["text"],
+      messages: [
+        {
+          role: "system",
+          content: "你是提示词翻译器。判断用户输入主要是中文还是英文：中文翻译成自然、准确的英文；英文翻译成自然、准确的中文。保留段落、列表、参数和专有名词含义。只输出翻译后的提示词正文，不要解释。",
+        },
+        { role: "user", content: prompt },
+      ],
+    },
+  });
+  return data.choices?.[0]?.message?.content?.trim() || "";
+}
+
 function TaskResultGrid({
   tasks,
   localResults,
@@ -1711,6 +1758,7 @@ function TaskResultGrid({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [columns, setColumns] = useState(5);
+  const [isPrivacyMode, setIsPrivacyMode] = useState(false);
   const visibleTasks = useMemo(() => tasks.filter((task) => (
     isActiveTask(task)
     || task.status === "error"
@@ -1749,6 +1797,10 @@ function TaskResultGrid({
       setLightboxIndex(previewItems.length ? previewItems.length - 1 : null);
     }
   }, [lightboxIndex, previewItems.length]);
+
+  useEffect(() => {
+    if (isPrivacyMode) setLightboxIndex(null);
+  }, [isPrivacyMode]);
 
   const deleteItems = async (itemIds: string[]) => {
     const taskIds = itemIds.filter((id) => visibleTasks.some((task) => task.id === id));
@@ -1808,6 +1860,14 @@ function TaskResultGrid({
             </button>
           </div>
           <div className="column-control" aria-label="每排显示数量">
+            <button
+              className={isPrivacyMode ? "active privacy-active" : ""}
+              onClick={() => setIsPrivacyMode((current) => !current)}
+              title={isPrivacyMode ? "显示缩略图" : "隐藏缩略图"}
+              aria-pressed={isPrivacyMode}
+            >
+              {isPrivacyMode ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
             {[2, 3, 4, 5].map((value) => (
               <button className={columns === value ? "active" : ""} key={value} onClick={() => setColumns(value)}>
                 {value}
@@ -1836,8 +1896,10 @@ function TaskResultGrid({
                     选择
                   </label>
                   <div className="image-frame">
-                    <button className={`image-preview ${firstImage ? "" : "placeholder"}`} onClick={() => firstImage && setLightboxIndex(previewIndexById.get(task.id) ?? null)} disabled={!firstImage}>
-                      {firstImage ? <img src={firstImage} alt={task.prompt} /> : isActive || isHydrating ? <LoaderCircle size={28} className="spin" /> : <ImageIcon size={30} />}
+                    <button className={`image-preview ${firstImage ? "" : "placeholder"} ${isPrivacyMode && firstImage ? "privacy-masked" : ""}`} onClick={() => firstImage && !isPrivacyMode && setLightboxIndex(previewIndexById.get(task.id) ?? null)} disabled={!firstImage}>
+                      {firstImage && !isPrivacyMode ? <img src={firstImage} alt={task.prompt} /> : null}
+                      {firstImage && isPrivacyMode ? <PrivacyMask /> : null}
+                      {!firstImage ? isActive || isHydrating ? <LoaderCircle size={28} className="spin" /> : <ImageIcon size={30} /> : null}
                       {task.savedFiles?.length ? <span className="saved-badge">已保存</span> : null}
                     </button>
                     <button className="image-card-action edit" type="button" title="编辑这条任务" onClick={() => onEditTask(task)}>
@@ -1874,8 +1936,8 @@ function TaskResultGrid({
                   选择
                 </label>
                 <div className="image-frame">
-                  <button className="image-preview" onClick={() => setLightboxIndex(previewIndexById.get(item.id) ?? null)}>
-                    <img src={item.url} alt={item.name} />
+                  <button className={`image-preview ${isPrivacyMode ? "privacy-masked" : ""}`} onClick={() => !isPrivacyMode && setLightboxIndex(previewIndexById.get(item.id) ?? null)}>
+                    {isPrivacyMode ? <PrivacyMask /> : <img src={item.url} alt={item.name} />}
                     <span className="saved-badge">本地</span>
                   </button>
                   <button className="image-delete" type="button" title="删除" onClick={() => void deleteItems([item.id])}>
@@ -1912,6 +1974,15 @@ function TaskResultGrid({
         }}
       />
     </div>
+  );
+}
+
+function PrivacyMask() {
+  return (
+    <span className="privacy-mask">
+      <EyeOff size={26} />
+      <span>隐私模式</span>
+    </span>
   );
 }
 

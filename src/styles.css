@@ -744,7 +744,7 @@ textarea:focus {
 
 .controls-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto auto;
   gap: 10px;
   align-items: end;
 }
@@ -757,6 +757,7 @@ textarea:focus {
   font-weight: 700;
 }
 
+.translate-prompt-button,
 .clear-prompt-button {
   min-height: 42px;
   padding-inline: 12px;
@@ -878,6 +879,11 @@ textarea:focus {
   font-weight: 800;
 }
 
+.column-control button svg {
+  display: block;
+  margin: 0 auto;
+}
+
 .column-control button:last-child {
   border-right: 0;
 }
@@ -885,6 +891,11 @@ textarea:focus {
 .column-control button.active {
   background: var(--accent);
   color: var(--on-accent);
+}
+
+.column-control button.privacy-active {
+  background: var(--danger-solid);
+  color: var(--on-dark);
 }
 
 .task-scroll {
@@ -993,6 +1004,25 @@ textarea:focus {
 .image-preview.placeholder {
   display: flex;
   color: var(--muted);
+}
+
+.image-preview.privacy-masked {
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(54, 65, 72, 0.88)),
+    var(--image-bg);
+  color: var(--on-dark);
+}
+
+.privacy-mask {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.privacy-mask span {
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .saved-badge {
