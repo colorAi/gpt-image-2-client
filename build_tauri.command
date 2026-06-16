@@ -1,6 +1,8 @@
 #!/bin/bash
 cd "$(dirname "$0")" || exit 1
 
+export PATH="/opt/homebrew/bin:/usr/local/bin:/Users/hongtao/.cargo/bin:$PATH"
+
 echo "=========================================="
 echo "     幻影畅享版 Tauri macOS Build"
 echo "=========================================="

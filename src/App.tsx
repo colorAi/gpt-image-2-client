@@ -10,11 +10,13 @@ import {
   Image as ImageIcon,
   KeyRound,
   LoaderCircle,
+  Moon,
   Paintbrush,
   RotateCcw,
   Save,
   Send,
   Settings,
+  Sun,
   Trash2,
   Upload,
   X,
@@ -28,6 +30,8 @@ type Connection = {
   baseUrl: string;
   apiKey: string;
 };
+
+type ThemeMode = "light" | "dark";
 
 type ImageTask = {
   id: string;
@@ -43,6 +47,10 @@ type ImageTask = {
   progress?: string;
   elapsed_secs?: number;
   duration_ms?: number;
+};
+
+type ImageEditResponse = {
+  data?: Array<{ b64_json?: string; url?: string; revised_prompt?: string }>;
 };
 
 type TaskRecord = ImageTask & {
@@ -131,6 +139,14 @@ type Toast = {
   tone: "success" | "error" | "info";
 };
 
+type ConfirmRequest = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel?: string;
+  resolve: (confirmed: boolean) => void;
+};
+
 type PreviewItem = {
   id: string;
   src: string;
@@ -197,6 +213,7 @@ const referenceImageJpegQuality = 0.9;
 const maxClientBatchConcurrency = 5;
 const maxPreviewHydrateAttempts = 5;
 const localResultPageSizeOptions = [10, 20, 50];
+const themeStorageKey = "phantom-image-theme";
 const taskStatusLabels: Record<ImageTask["status"], string> = {
   queued: "排队中",
   running: "生成中",
@@ -361,6 +378,11 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "请求失败";
 }
 
+function shouldFallbackToSyncEdit(error: unknown) {
+  const message = getErrorMessage(error).trim().toLowerCase();
+  return message === "internal server error" || message.includes("内部服务错误");
+}
+
 function isDirectoryAccessError(error: unknown) {
   const message = getErrorMessage(error).toLowerCase();
   return message.includes("permission")
@@ -444,6 +466,13 @@ function localDateString(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+function getInitialTheme(): ThemeMode {
+  if (typeof window === "undefined") return "light";
+  const savedTheme = window.localStorage.getItem(themeStorageKey);
+  if (savedTheme === "light" || savedTheme === "dark") return savedTheme;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
 function splitPromptGroups(value: string) {
   const blocks = value
     .split(/\n\s*\n+/)
@@ -467,10 +496,35 @@ function promptAssistantContent(text: string, imageDataUrls: string[]) {
   ];
 }
 
+function ConfirmDialog({
+  request,
+  onCancel,
+  onConfirm,
+}: {
+  request: ConfirmRequest | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!request) return null;
+  return (
+    <div className="modal-backdrop confirm-backdrop" role="presentation" onClick={onCancel}>
+      <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" onClick={(event) => event.stopPropagation()}>
+        <h3 id="confirm-dialog-title">{request.title}</h3>
+        <p>{request.message}</p>
+        <div className="confirm-actions">
+          <button className="btn" type="button" onClick={onCancel}>{request.cancelLabel || "取消"}</button>
+          <button className="btn danger" type="button" onClick={onConfirm}>{request.confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [connection, setConnection] = useState<Connection>(defaultConnection);
   const [draftConnection, setDraftConnection] = useState<Connection>(connection);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [connectionState, setConnectionState] = useState<"idle" | "checking" | "ok" | "error">("idle");
   const [connectionMessage, setConnectionMessage] = useState("");
@@ -549,6 +603,11 @@ export default function App() {
   }, [refreshModels]);
 
   useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem(themeStorageKey, theme);
+  }, [theme]);
+
+  useEffect(() => {
     let cancelled = false;
     Promise.all([
       invoke<Connection>("load_connection"),
@@ -596,9 +655,20 @@ export default function App() {
           <h1>幻影畅享版</h1>
         </div>
 
-        <button className="icon-btn rail-settings" onClick={() => setSettingsOpen(true)} title="配置">
-          <Settings size={19} />
-        </button>
+        <div className="rail-actions">
+          <button
+            className="icon-btn rail-theme"
+            onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+            title={theme === "dark" ? "切换到亮色主题" : "切换到暗色主题"}
+            aria-label={theme === "dark" ? "切换到亮色主题" : "切换到暗色主题"}
+            aria-pressed={theme === "dark"}
+          >
+            {theme === "dark" ? <Sun size={19} /> : <Moon size={19} />}
+          </button>
+          <button className="icon-btn rail-settings" onClick={() => setSettingsOpen(true)} title="配置">
+            <Settings size={19} />
+          </button>
+        </div>
       </aside>
 
       {settingsOpen ? (
@@ -731,6 +801,7 @@ function GenerateView({
   const [localResultTotal, setLocalResultTotal] = useState(0);
   const [isLocalResultsLoading, setIsLocalResultsLoading] = useState(false);
   const [queueStats, setQueueStats] = useState<PromptQueueStats>({ waiting: 0, running: 0 });
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const savingTaskIds = useRef(new Set<string>());
   const hydratingTaskIds = useRef(new Set<string>());
@@ -751,6 +822,17 @@ function GenerateView({
     setQueueStats({
       waiting: pendingPromptJobs.current.length,
       running: runningPromptJobIds.current.size,
+    });
+  }, []);
+
+  const requestConfirmation = useCallback((options: Omit<ConfirmRequest, "resolve">) => (
+    new Promise<boolean>((resolve) => setConfirmRequest({ ...options, resolve }))
+  ), []);
+
+  const resolveConfirmation = useCallback((confirmed: boolean) => {
+    setConfirmRequest((current) => {
+      current?.resolve(confirmed);
+      return null;
     });
   }, []);
 
@@ -1252,7 +1334,13 @@ function GenerateView({
     const confirmText = savedPaths.length
       ? `确定删除 ${targets.length} 个任务吗？删除会连同 ${savedPaths.length} 个本地文件一起删除，此操作不可撤销。`
       : `确定删除 ${targets.length} 个任务记录吗？此操作不可撤销。`;
-    if (!window.confirm(confirmText)) return false;
+    const confirmed = await requestConfirmation({
+      title: "确认删除",
+      message: confirmText,
+      confirmLabel: savedPaths.length ? "删除任务和本地文件" : "删除任务记录",
+      cancelLabel: "取消",
+    });
+    if (!confirmed) return false;
     try {
       let removed = 0;
       if (savedPaths.length) {
@@ -1267,7 +1355,7 @@ function GenerateView({
       notify(getErrorMessage(error), "error");
       return false;
     }
-  }, [loadLocalResults, localResultDate, localResultPage, localResultPageSize, notify, resultDir, tasks]);
+  }, [loadLocalResults, localResultDate, localResultPage, localResultPageSize, notify, requestConfirmation, resultDir, tasks]);
 
   const askAssistant = async () => {
     if (isAssistantLoading) return;
@@ -1447,7 +1535,13 @@ function GenerateView({
           onDeleteLocal={async (resultIds) => {
             const targets = localResults.filter((item) => resultIds.includes(item.id));
             if (!targets.length) return false;
-            if (!window.confirm(`确定删除 ${targets.length} 张本地图片吗？文件、提示词记录和缩略图都会一起删除，此操作不可撤销。`)) return false;
+            const confirmed = await requestConfirmation({
+              title: "确认删除本地图片",
+              message: `确定删除 ${targets.length} 张本地图片吗？文件、提示词记录和缩略图都会一起删除，此操作不可撤销。`,
+              confirmLabel: "删除本地图片",
+              cancelLabel: "取消",
+            });
+            if (!confirmed) return false;
             try {
               const removed = await invoke<number>("delete_local_images", { resultDir, paths: targets.map((item) => item.path) });
               setLocalResults((current) => current.filter((item) => !resultIds.includes(item.id)));
@@ -1462,6 +1556,11 @@ function GenerateView({
           }}
         />
       </div>
+      <ConfirmDialog
+        request={confirmRequest}
+        onCancel={() => resolveConfirmation(false)}
+        onConfirm={() => resolveConfirmation(true)}
+      />
     </section>
   );
 }
@@ -1487,7 +1586,45 @@ async function createEditTask(api: ReturnType<typeof createApiClient>, payload: 
     ["quality", payload.quality],
   ];
   if (payload.size) fields.push(["size", payload.size]);
-  return api.multipart<ImageTask>("/api/image-tasks/edits", fields, payload.files);
+  try {
+    return await api.multipart<ImageTask>("/api/image-tasks/edits", fields, payload.files);
+  } catch (error) {
+    if (!shouldFallbackToSyncEdit(error)) throw error;
+    return createSyncEditTaskFallback(api, payload, error);
+  }
+}
+
+async function createSyncEditTaskFallback(
+  api: ReturnType<typeof createApiClient>,
+  payload: { clientTaskId: string; files: File[]; prompt: string; model: string; size: string; quality: string },
+  primaryError: unknown,
+) {
+  const fields: Array<[string, string]> = [
+    ["prompt", payload.prompt],
+    ["model", payload.model],
+    ["quality", payload.quality],
+    ["n", "1"],
+    ["response_format", "url"],
+  ];
+  if (payload.size) fields.push(["size", payload.size]);
+  try {
+    const result = await api.multipart<ImageEditResponse>("/v1/images/edits", fields, payload.files);
+    const now = new Date().toISOString();
+    return {
+      id: payload.clientTaskId,
+      status: "success",
+      mode: "edit",
+      model: payload.model,
+      size: payload.size,
+      quality: payload.quality,
+      created_at: now,
+      updated_at: now,
+      data: result.data || [],
+      progress: "success",
+    } satisfies ImageTask;
+  } catch (fallbackError) {
+    throw new Error(`图生图任务接口失败：${getErrorMessage(primaryError)}；兼容接口也失败：${getErrorMessage(fallbackError)}`);
+  }
 }
 
 async function fetchImageTasks(api: ReturnType<typeof createApiClient>, ids: string[]) {
