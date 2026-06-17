@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ChevronUp,
   Copy,
+  ExternalLink,
   FilePenLine,
   FolderOpen,
   Eye,
@@ -109,6 +110,8 @@ type NativeLocalImage = {
 type NativeLocalImagePage = {
   items: NativeLocalImage[];
   total: number;
+  overallTotal?: number;
+  overall_total?: number;
   page: number;
   pageSize?: number;
   page_size?: number;
@@ -183,6 +186,7 @@ type PromptQueueStats = {
 };
 
 const fixedBaseUrl = "https://1kgpt.hootoo.dpdns.org";
+const clientDownloadUrl = "https://pan.quark.cn/s/3da05efbef6e";
 const defaultConnection: Connection = { baseUrl: fixedBaseUrl, apiKey: "" };
 const defaultImageModel = "gpt-image-2";
 const aspectOptions = [
@@ -711,6 +715,10 @@ export default function App() {
                 <div className={`local-status ${resultDir ? "ok" : ""}`}>
                   {resultDir ? directoryMessage || `已选择：${resultDir}` : "未选择目录时不能提交任务；选择后结果会直接落盘并生成缩略图"}
                 </div>
+                <a className="btn download-link" href={clientDownloadUrl} target="_blank" rel="noreferrer">
+                  <ExternalLink size={16} />
+                  客户端下载地址
+                </a>
               </div>
             </div>
 
@@ -803,6 +811,7 @@ function GenerateView({
   const [localResultPage, setLocalResultPage] = useState(1);
   const [localResultPageSize, setLocalResultPageSize] = useState(20);
   const [localResultTotal, setLocalResultTotal] = useState(0);
+  const [localResultOverallTotal, setLocalResultOverallTotal] = useState(0);
   const [isLocalResultsLoading, setIsLocalResultsLoading] = useState(false);
   const [queueStats, setQueueStats] = useState<PromptQueueStats>({ waiting: 0, running: 0 });
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
@@ -920,9 +929,7 @@ function GenerateView({
       setLocalResults(result.items.map(nativeLocalImageToRecord));
       setLocalResultDates(result.dates || []);
       setLocalResultTotal(result.total || 0);
-      if (!result.total && date === localDateString() && result.dates?.length && !result.dates.includes(date)) {
-        setLocalResultDate(result.dates[0]);
-      }
+      setLocalResultOverallTotal(result.overallTotal ?? result.overall_total ?? result.total ?? 0);
       const nextPageSize = result.pageSize || result.page_size || pageSize;
       if (nextPageSize !== pageSize) setLocalResultPageSize(nextPageSize);
       if (result.page && result.page !== page) setLocalResultPage(result.page);
@@ -930,6 +937,7 @@ function GenerateView({
       if (localLoadSeq.current !== loadId) return;
       setLocalResults([]);
       setLocalResultTotal(0);
+      setLocalResultOverallTotal(0);
       notify(getErrorMessage(error), "error");
     } finally {
       if (localLoadSeq.current === loadId) setIsLocalResultsLoading(false);
@@ -942,6 +950,7 @@ function GenerateView({
       setLocalResults([]);
       setLocalResultDates([]);
       setLocalResultTotal(0);
+      setLocalResultOverallTotal(0);
       setIsLocalResultsLoading(false);
       return;
     }
@@ -1350,6 +1359,7 @@ function GenerateView({
       if (savedPaths.length) {
         if (!resultDir) throw new Error("请先选择本地结果目录");
         removed = await invoke<number>("delete_local_images", { resultDir, paths: savedPaths });
+        setLocalResultOverallTotal((current) => Math.max(0, current - removed));
         void loadLocalResults(resultDir, localResultDate, localResultPage, localResultPageSize);
       }
       setTasks((current) => current.filter((task) => !taskIds.includes(task.id)));
@@ -1549,6 +1559,7 @@ function GenerateView({
           localResultPage={localResultPage}
           localResultPageSize={localResultPageSize}
           localResultTotal={localResultTotal}
+          localResultOverallTotal={localResultOverallTotal}
           isLocalResultsLoading={isLocalResultsLoading}
           activeCount={activeCount}
           queueStats={queueStats}
@@ -1574,6 +1585,7 @@ function GenerateView({
               const removed = await invoke<number>("delete_local_images", { resultDir, paths: targets.map((item) => item.path) });
               setLocalResults((current) => current.filter((item) => !resultIds.includes(item.id)));
               setLocalResultTotal((current) => Math.max(0, current - removed));
+              setLocalResultOverallTotal((current) => Math.max(0, current - removed));
               void loadLocalResults(resultDir, localResultDate, localResultPage, localResultPageSize);
               notify(`已删除 ${removed} 张本地图片`, "success");
               return true;
@@ -1722,6 +1734,7 @@ function TaskResultGrid({
   localResultPage,
   localResultPageSize,
   localResultTotal,
+  localResultOverallTotal,
   isLocalResultsLoading,
   activeCount,
   queueStats,
@@ -1742,6 +1755,7 @@ function TaskResultGrid({
   localResultPage: number;
   localResultPageSize: number;
   localResultTotal: number;
+  localResultOverallTotal: number;
   isLocalResultsLoading: boolean;
   activeCount: number;
   queueStats: PromptQueueStats;
@@ -1827,7 +1841,7 @@ function TaskResultGrid({
         <div>
           <h3>任务和结果</h3>
           <p>
-            {tasks.length} 个任务，{localResultTotal} 张本地图片，{activeCount} 个服务运行中，
+            本地总数 {localResultOverallTotal} 张，当前日期 {localResultTotal} 张，{activeCount} 个服务运行中，
             本机运行 {queueStats.running} 个，排队 {queueStats.waiting} 个，已选 {selected.length} 个
           </p>
         </div>

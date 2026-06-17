@@ -465,6 +465,12 @@ textarea:focus {
   color: var(--success);
 }
 
+.download-link {
+  width: fit-content;
+  margin-top: 12px;
+  text-decoration: none;
+}
+
 .main {
   min-width: 0;
   padding: 28px;

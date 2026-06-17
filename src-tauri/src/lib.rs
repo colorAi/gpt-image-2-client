@@ -102,6 +102,7 @@ struct LocalImage {
 struct LocalImagePage {
     items: Vec<LocalImage>,
     total: usize,
+    overall_total: usize,
     page: usize,
     page_size: usize,
     dates: Vec<String>,
@@ -423,6 +424,24 @@ fn local_result_dates(root: &Path) -> Result<Vec<String>, String> {
     }
     dates.sort_by(|left, right| right.cmp(left));
     Ok(dates)
+}
+
+fn count_images_in_result_dirs(root: &Path, dates: &[String]) -> usize {
+    dates
+        .iter()
+        .map(|date| root.join(date))
+        .filter(|path| path.exists())
+        .map(|path| {
+            WalkDir::new(path)
+                .into_iter()
+                .filter_map(Result::ok)
+                .filter(|entry| {
+                    let path = entry.path();
+                    path.is_file() && !is_thumbnail_artifact(path) && is_image_path(path)
+                })
+                .count()
+        })
+        .sum()
 }
 
 fn rel_path(root: &Path, path: &Path) -> String {
@@ -798,6 +817,7 @@ fn scan_local_images(
         return Ok(LocalImagePage {
             items: vec![],
             total: 0,
+            overall_total: 0,
             page: current_page,
             page_size: current_page_size,
             dates: vec![],
@@ -808,6 +828,7 @@ fn scan_local_images(
         return Err("本地结果目录不存在".to_string());
     }
     let dates = local_result_dates(&root)?;
+    let overall_total = count_images_in_result_dirs(&root, &dates);
     let selected_date = date
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -821,6 +842,7 @@ fn scan_local_images(
         return Ok(LocalImagePage {
             items: vec![],
             total: 0,
+            overall_total,
             page: current_page,
             page_size: current_page_size,
             dates,
@@ -896,6 +918,7 @@ fn scan_local_images(
     Ok(LocalImagePage {
         items,
         total,
+        overall_total,
         page: effective_page,
         page_size: current_page_size,
         dates,
