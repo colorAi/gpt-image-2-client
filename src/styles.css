@@ -1020,6 +1020,70 @@ textarea:focus {
   color: var(--muted);
 }
 
+.generation-progress {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.generation-progress strong {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+
+.generation-progress small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.task-error-overlay {
+  display: grid;
+  width: min(84%, 320px);
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid rgba(180, 35, 24, 0.2);
+  border-radius: 10px;
+  background: rgba(180, 35, 24, 0.08);
+  color: var(--danger-solid);
+  text-align: left;
+}
+
+.task-error-overlay strong {
+  font-size: 13px;
+}
+
+.task-error-overlay span {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+
+.task-error-overlay.compact {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  z-index: 1;
+  width: auto;
+  max-height: 76px;
+  padding: 8px 10px;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(127, 29, 29, 0.9);
+  color: #ffffff;
+}
+
+.task-error-overlay.compact span {
+  -webkit-line-clamp: 2;
+}
+
 .image-preview.privacy-masked {
   background:
     linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(54, 65, 72, 0.88)),
