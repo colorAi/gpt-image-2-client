@@ -959,8 +959,10 @@ textarea:focus {
   border-radius: 999px;
   background: rgba(180, 35, 24, 0.88);
   color: var(--on-dark);
-  opacity: 1;
+  opacity: 0;
+  pointer-events: none;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+  transform: scale(0.94);
   transition: opacity 0.14s ease, transform 0.14s ease, background 0.14s ease;
 }
 
@@ -983,15 +985,19 @@ textarea:focus {
   border-radius: 999px;
   background: rgba(17, 24, 39, 0.74);
   color: var(--on-dark);
+  opacity: 0;
+  pointer-events: none;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
-  transition: transform 0.14s ease, background 0.14s ease;
+  transform: scale(0.94);
+  transition: opacity 0.14s ease, transform 0.14s ease, background 0.14s ease;
 }
 
 .image-card-action.edit {
   top: 8px;
 }
 
-.image-card-action.retry {
+.image-card-action.retry,
+.image-card-action.use-reference {
   bottom: 8px;
   background: rgba(16, 112, 202, 0.9);
 }
@@ -1003,7 +1009,9 @@ textarea:focus {
 }
 
 .image-card-action.retry:hover,
-.image-card-action.retry:focus-visible {
+.image-card-action.retry:focus-visible,
+.image-card-action.use-reference:hover,
+.image-card-action.use-reference:focus-visible {
   background: #175cd3;
 }
 
@@ -1035,12 +1043,49 @@ textarea:focus {
   position: absolute;
   top: 8px;
   right: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 999px;
   background: rgba(5, 118, 71, 0.92);
   color: var(--on-dark);
-  padding: 4px 8px;
-  font-size: 12px;
-  font-weight: 800;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+  transform: scale(0.94);
+  transition: opacity 0.14s ease, transform 0.14s ease, background 0.14s ease;
+}
+
+.image-card:hover .image-delete,
+.image-card:hover .image-card-action,
+.image-card:hover .saved-badge,
+.image-card:focus-within .image-delete,
+.image-card:focus-within .image-card-action,
+.image-card:focus-within .saved-badge {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.saved-badge:hover,
+.saved-badge:focus-visible {
+  background: #047857;
+  transform: translateY(-1px);
+}
+
+@media (hover: none) {
+  .image-delete,
+  .image-card-action,
+  .saved-badge {
+    opacity: 1;
+    pointer-events: auto;
+    transform: scale(1);
+  }
 }
 
 .image-meta {

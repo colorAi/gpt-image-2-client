@@ -11,6 +11,7 @@ import {
   Eye,
   EyeOff,
   Image as ImageIcon,
+  ImagePlus,
   KeyRound,
   Languages,
   LoaderCircle,
@@ -27,6 +28,7 @@ import {
 } from "lucide-react";
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -178,6 +180,7 @@ type SubmitPromptOptions = {
   model?: string;
   size?: string;
   quality?: string;
+  replaceTaskId?: string;
 };
 
 type PromptQueueStats = {
@@ -605,6 +608,18 @@ export default function App() {
     }
   };
 
+  const openClientDownload = async () => {
+    try {
+      if (isTauri()) {
+        await openUrl(clientDownloadUrl);
+      } else {
+        window.open(clientDownloadUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (error) {
+      notify(getErrorMessage(error), "error");
+    }
+  };
+
   useEffect(() => {
     void refreshModels();
   }, [refreshModels]);
@@ -715,10 +730,10 @@ export default function App() {
                 <div className={`local-status ${resultDir ? "ok" : ""}`}>
                   {resultDir ? directoryMessage || `已选择：${resultDir}` : "未选择目录时不能提交任务；选择后结果会直接落盘并生成缩略图"}
                 </div>
-                <a className="btn download-link" href={clientDownloadUrl} target="_blank" rel="noreferrer">
+                <button className="btn download-link" type="button" onClick={() => void openClientDownload()}>
                   <ExternalLink size={16} />
-                  客户端下载地址
-                </a>
+                  没事就瞅一下，万一有新版呢
+                </button>
               </div>
             </div>
 
@@ -1081,11 +1096,11 @@ function GenerateView({
 
   const addFiles = useCallback(async (nextFiles: FileList | File[]) => {
     const images = Array.from(nextFiles).filter(isImageFile);
-    if (!images.length) return;
+    if (!images.length) return false;
     const remainingSlots = Math.max(0, 8 - files.length);
     if (!remainingSlots) {
       notify("最多添加 8 张参考图", "error");
-      return;
+      return false;
     }
     setIsProcessingReferences(true);
     try {
@@ -1097,12 +1112,33 @@ function GenerateView({
       setFiles((current) => [...current, ...compressed].slice(0, 8));
       if (images.length > candidates.length) notify("最多添加 8 张参考图，超出的图片已跳过", "info");
       if (failed.length) notify(`已跳过 ${failed.length} 张无法处理的图片`, "info");
+      return true;
     } catch (error) {
       notify(getErrorMessage(error), "error");
+      return false;
     } finally {
       setIsProcessingReferences(false);
     }
   }, [files.length, notify]);
+
+  const addResultAsReference = useCallback(async (src: string, name: string) => {
+    if (!src) {
+      notify("当前图片还未加载完成", "error");
+      return;
+    }
+    try {
+      const response = await fetch(src);
+      if (!response.ok) throw new Error(`读取图片失败（${response.status}）`);
+      const blob = await response.blob();
+      const extension = blob.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+      const file = new File([blob], `${name || "result"}.${extension}`, { type: blob.type || "image/png" });
+      if (await addFiles([file])) {
+        notify("已加入参考图，可以直接提交编辑任务", "success");
+      }
+    } catch (error) {
+      notify(getErrorMessage(error), "error");
+    }
+  }, [addFiles, notify]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -1270,7 +1306,16 @@ function GenerateView({
         localSortKey: job.localSortKey,
         progress: "等待本机提交",
       }));
-      setTasks((current) => [...placeholders.slice().reverse(), ...current].slice(0, 100));
+      setTasks((current) => {
+        if (!options.replaceTaskId) {
+          return [...placeholders.slice().reverse(), ...current].slice(0, 100);
+        }
+        const replacement = placeholders[0];
+        const replaced = current.map((item) => item.id === options.replaceTaskId ? replacement : item);
+        return replaced.some((item) => item.id === replacement.id)
+          ? replaced
+          : [replacement, ...current].slice(0, 100);
+      });
       pendingPromptJobs.current.push(...jobs);
       syncQueueStats();
       pumpPromptQueue();
@@ -1337,6 +1382,7 @@ function GenerateView({
       model: task.model || model,
       size: task.size ?? selectedSize,
       quality: task.quality || quality,
+      replaceTaskId: task.id,
     });
   }, [files, model, notify, quality, selectedSize]);
 
@@ -1569,6 +1615,7 @@ function GenerateView({
           onUsePrompt={setPrompt}
           onEditTask={fillTaskForEdit}
           onRetryTask={retryTask}
+          onAddReference={addResultAsReference}
           notify={notify}
           onDelete={deleteTasksAndFiles}
           onDeleteLocal={async (resultIds) => {
@@ -1744,6 +1791,7 @@ function TaskResultGrid({
   onUsePrompt,
   onEditTask,
   onRetryTask,
+  onAddReference,
   notify,
   onDelete,
   onDeleteLocal,
@@ -1765,6 +1813,7 @@ function TaskResultGrid({
   onUsePrompt: (prompt: string) => void;
   onEditTask: (task: TaskRecord) => void;
   onRetryTask: (task: TaskRecord) => void | Promise<void>;
+  onAddReference: (src: string, name: string) => void | Promise<void>;
   notify: (message: string, tone?: Toast["tone"]) => void;
   onDelete: (taskIds: string[]) => Promise<boolean>;
   onDeleteLocal: (resultIds: string[]) => Promise<boolean>;
@@ -1833,6 +1882,18 @@ function TaskResultGrid({
   const deleteTasks = async (taskIds: string[]) => {
     const deleted = await onDelete(taskIds);
     if (deleted) setSelected((current) => current.filter((taskId) => !taskIds.includes(taskId)));
+  };
+
+  const revealLocalImage = async (path: string) => {
+    if (!path) {
+      notify("图片文件位置不可用", "error");
+      return;
+    }
+    try {
+      await revealItemInDir(path);
+    } catch (error) {
+      notify(getErrorMessage(error), "error");
+    }
   };
 
   return (
@@ -1914,14 +1975,23 @@ function TaskResultGrid({
                       {firstImage && !isPrivacyMode ? <img src={firstImage} alt={task.prompt} /> : null}
                       {firstImage && isPrivacyMode ? <PrivacyMask /> : null}
                       {!firstImage ? isActive || isHydrating ? <LoaderCircle size={28} className="spin" /> : <ImageIcon size={30} /> : null}
-                      {task.savedFiles?.length ? <span className="saved-badge">已保存</span> : null}
                     </button>
+                    {task.savedFiles?.[0] ? (
+                      <button className="saved-badge" type="button" title="定位文件" aria-label="定位文件" onClick={() => void revealLocalImage(task.savedFiles![0])}>
+                        <FolderOpen size={15} />
+                      </button>
+                    ) : null}
                     <button className="image-card-action edit" type="button" title="编辑这条任务" onClick={() => onEditTask(task)}>
                       <FilePenLine size={15} />
                     </button>
                     {task.status === "error" ? (
                       <button className="image-card-action retry" type="button" title="重新提交" onClick={() => void onRetryTask(task)}>
                         <RotateCcw size={15} />
+                      </button>
+                    ) : null}
+                    {task.status === "success" && firstImage ? (
+                      <button className="image-card-action use-reference" type="button" title="一键加入参考图" onClick={() => void onAddReference(firstImage, `task-${task.id}`)}>
+                        <ImagePlus size={15} />
                       </button>
                     ) : null}
                     <button className="image-delete" type="button" title="删除" onClick={() => void deleteTasks([task.id])}>
@@ -1952,10 +2022,15 @@ function TaskResultGrid({
                 <div className="image-frame">
                   <button className={`image-preview ${isPrivacyMode ? "privacy-masked" : ""}`} onClick={() => !isPrivacyMode && setLightboxIndex(previewIndexById.get(item.id) ?? null)}>
                     {isPrivacyMode ? <PrivacyMask /> : <img src={item.url} alt={item.name} />}
-                    <span className="saved-badge">本地</span>
+                  </button>
+                  <button className="saved-badge" type="button" title="定位文件" aria-label="定位文件" onClick={() => void revealLocalImage(item.path)}>
+                    <FolderOpen size={15} />
                   </button>
                   <button className="image-delete" type="button" title="删除" onClick={() => void deleteItems([item.id])}>
                     <Trash2 size={15} />
+                  </button>
+                  <button className="image-card-action use-reference" type="button" title="一键加入参考图" onClick={() => void onAddReference(item.originalUrl, item.name.replace(/\.[^.]+$/, ""))}>
+                    <ImagePlus size={15} />
                   </button>
                 </div>
                 <div className="image-meta">
