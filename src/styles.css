@@ -249,29 +249,34 @@ button:disabled {
   left: 50%;
   z-index: 2;
   display: grid;
-  width: 38px;
-  min-height: 64px;
+  width: 34px;
+  min-height: 66px;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--festival-gold) 62%, #7c251c);
-  border-radius: 15px 13px 17px 12px / 16px 19px 13px 18px;
+  border: 1px solid rgba(255, 235, 205, 0.18);
+  border-radius: 18px 18px 9px 10px / 24px 23px 12px 14px;
   background:
-    radial-gradient(circle at 28% 18%, rgba(255, 236, 177, 0.2), transparent 34%),
-    linear-gradient(145deg, #9c3b2d, #783024 62%, #65281f);
-  color: color-mix(in srgb, var(--festival-gold) 86%, #fff4c7);
-  padding: 8px 0;
+    radial-gradient(circle at 34% 14%, rgba(255, 128, 104, 0.28), transparent 32%),
+    linear-gradient(165deg, #f0191f 0%, #d71118 52%, #b90e14 100%);
+  clip-path: polygon(50% 0, 72% 4%, 90% 18%, 96% 51%, 90% 88%, 58% 100%, 25% 94%, 8% 78%, 5% 43%, 14% 14%);
+  color: rgba(255, 255, 255, 0.94);
+  padding: 9px 0 7px;
   font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 900;
-  line-height: 1.08;
-  letter-spacing: 0.1em;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
   text-align: center;
   text-orientation: upright;
   transform: translateX(-50%);
   writing-mode: vertical-rl;
   box-shadow:
-    0 6px 14px rgba(90, 27, 20, 0.2),
-    inset 0 0 0 1px rgba(255, 224, 147, 0.16),
-    inset 0 -8px 14px rgba(82, 24, 18, 0.16);
+    0 6px 14px rgba(120, 12, 16, 0.24),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    inset 0 -7px 11px rgba(120, 5, 10, 0.18);
+}
+
+.festival-rail-tag.festival-rail-seal {
+  top: 204px;
 }
 
 .festival-rail-scene {
@@ -281,7 +286,8 @@ button:disabled {
   left: 50%;
   width: 72px;
   overflow: visible;
-  transform: translateX(-50%);
+  transform: translateX(-50%) scale(0.25);
+  transform-origin: top center;
 }
 
 .festival-rail-scene::after {

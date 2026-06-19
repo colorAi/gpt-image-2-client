@@ -4,7 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { CheckCircle2, ExternalLink, FolderOpen, KeyRound, Leaf, LoaderCircle, Moon, Paintbrush, Palette, Save, Settings, Sun, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApiClient, fetchImageTasks } from "./api";
-import { FestivalBackdrop, FestivalDragonBoatRail } from "./components/FestivalRail";
+import { FestivalBackdrop, FestivalRailSeal } from "./components/FestivalRail";
 import GenerateView from "./components/GenerateView";
 import { appearanceStorageKey, clientDownloadUrl, defaultConnection, fixedBaseUrl, themeStorageKey } from "./constants";
 import type { AppearanceMode, Connection, Model, ThemeMode, Toast } from "./types";
@@ -20,6 +20,7 @@ export default function App() {
   const [connectionState, setConnectionState] = useState<"idle" | "checking" | "ok" | "error">("idle");
   const [connectionMessage, setConnectionMessage] = useState("");
   const [resultDir, setResultDir] = useState("");
+  const [activeResultDir, setActiveResultDir] = useState("");
   const [directoryMessage, setDirectoryMessage] = useState("");
   const startupDirectoryPrompted = useRef(false);
 
@@ -45,6 +46,7 @@ export default function App() {
       if (!selected || Array.isArray(selected)) return;
       await invoke("save_settings", { value: { resultDir: selected } });
       setResultDir(selected);
+      setActiveResultDir(selected);
       setDirectoryMessage(`已选择：${selected}`);
       notify("本地结果目录已保存", "success");
     } catch (error) {
@@ -56,6 +58,7 @@ export default function App() {
     try {
       await invoke("save_settings", { value: { resultDir: null } });
       setResultDir("");
+      setActiveResultDir("");
       setDirectoryMessage("");
       notify("已取消本地结果目录", "info");
     } catch (error) {
@@ -128,16 +131,23 @@ export default function App() {
       setDraftConnection(nextConnection);
       const savedDir = settings.resultDir || "";
       setResultDir(savedDir);
+      setActiveResultDir("");
       setDirectoryMessage(savedDir ? `已记住：${savedDir}` : "");
-      if (platform !== "macos" || startupDirectoryPrompted.current) return;
+      if (platform !== "macos") {
+        setActiveResultDir(savedDir);
+        return;
+      }
+      if (startupDirectoryPrompted.current) return;
       if (!savedDir) {
         startupDirectoryPrompted.current = true;
         setSettingsOpen(true);
         window.setTimeout(() => void chooseDirectory(), 400);
         return;
       }
-      void invoke("check_result_dir_access", { resultDir: savedDir }).catch((error) => {
-        if (!isDirectoryAccessError(error) || startupDirectoryPrompted.current) return;
+      void invoke("check_result_dir_access", { resultDir: savedDir }).then(() => {
+        if (!cancelled) setActiveResultDir(savedDir);
+      }).catch((error) => {
+        if (cancelled || !isDirectoryAccessError(error) || startupDirectoryPrompted.current) return;
         startupDirectoryPrompted.current = true;
         setSettingsOpen(true);
         setDirectoryMessage("macOS 需要重新选择本地结果目录以授予读写权限");
@@ -147,6 +157,7 @@ export default function App() {
       if (!cancelled) {
         setConnection(defaultConnection);
         setDraftConnection(defaultConnection);
+        setActiveResultDir("");
         setDirectoryMessage("");
       }
     });
@@ -164,7 +175,7 @@ export default function App() {
             <div className="brand-mark festival-brand-mark"><Leaf size={22} /></div>
           ) : <div className="brand-mark"><Paintbrush size={22} /></div>}
           <h1>幻影畅享版</h1>
-          {appearance === "dragon-boat" ? <FestivalDragonBoatRail /> : null}
+          {appearance === "dragon-boat" ? <FestivalRailSeal /> : null}
         </div>
 
         <div className="rail-actions">
@@ -269,7 +280,7 @@ export default function App() {
       ) : null}
 
       <main className="main">
-        <GenerateView api={api} resultDir={resultDir} notify={notify} />
+        <GenerateView api={api} resultDir={activeResultDir} notify={notify} />
       </main>
 
       <div className="toast-stack">

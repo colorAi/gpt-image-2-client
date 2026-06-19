@@ -123,24 +123,40 @@ export function formatElapsedTime(totalSeconds: number) {
 }
 
 export function taskElapsedSeconds(task: TaskRecord, now = Date.now()) {
-  if (task.status !== "running" && !task.runningStartedAt) return 0;
   const base = Math.max(0, task.runningElapsedBase ?? task.elapsed_secs ?? 0);
+  if (task.status !== "running") return Math.floor(task.elapsed_secs ?? base);
   if (!task.runningStartedAt) return Math.floor(base);
   return Math.max(0, Math.floor(base + (now - task.runningStartedAt) / 1000));
 }
 
 export function withRunningTimer(task: TaskRecord, now = Date.now()) {
-  if (task.status !== "running" || task.runningStartedAt) return task;
+  const normalized = normalizeImageTask(task) as TaskRecord;
+  if (normalized.status !== "running") {
+    return {
+      ...normalized,
+      runningStartedAt: undefined,
+      runningElapsedBase: undefined,
+    };
+  }
+  if (normalized.runningStartedAt) return normalized;
   return {
-    ...task,
+    ...normalized,
     runningStartedAt: now,
-    runningElapsedBase: Math.max(0, task.elapsed_secs || 0),
+    runningElapsedBase: Math.max(0, normalized.elapsed_secs || 0),
   };
 }
 
 export function mergeTaskUpdate(current: TaskRecord, next: ImageTask, now = Date.now()) {
-  const merged = { ...current, ...next };
-  if (next.status !== "running") return merged;
+  const normalizedNext = normalizeImageTask(next);
+  const merged = { ...current, ...normalizedNext };
+  if (normalizedNext.status !== "running") {
+    return {
+      ...merged,
+      elapsed_secs: normalizedNext.elapsed_secs ?? taskElapsedSeconds(current, now),
+      runningStartedAt: undefined,
+      runningElapsedBase: undefined,
+    };
+  }
   if (current.status === "running" && current.runningStartedAt) {
     return {
       ...merged,
@@ -188,10 +204,9 @@ export function isDirectoryAccessError(error: unknown) {
 
 export function nativeLocalImageToRecord(item: NativeLocalImage): LocalResultRecord {
   const originalUrl = convertFileSrc(item.path);
+  const thumbnailDataUrl = item.thumbnail_data_url || item.thumbnailDataUrl || item.data_url || item.dataUrl || "";
   const thumbnailPath = item.thumbnail_path || item.thumbnailPath || "";
-  const thumbnailUrl = thumbnailPath
-    ? convertFileSrc(thumbnailPath)
-    : item.thumbnail_data_url || item.thumbnailDataUrl || item.data_url || item.dataUrl || originalUrl;
+  const thumbnailUrl = thumbnailDataUrl || (thumbnailPath ? convertFileSrc(thumbnailPath) : originalUrl);
   return {
     id: item.id,
     rel: item.rel,
@@ -210,7 +225,7 @@ export function nativeLocalImageToRecord(item: NativeLocalImage): LocalResultRec
 }
 
 export function isActiveTask(task: Pick<ImageTask, "status">) {
-  return activeStatuses.has(task.status);
+  return activeStatuses.has(task.status) && !hasFailedTaskSignal(task);
 }
 
 export function isPollableTask(task: TaskRecord) {
@@ -224,7 +239,7 @@ export function shouldApplyTaskUpdate(current: TaskRecord, next: ImageTask) {
 }
 
 export function shouldReleasePromptQueueSlot(task: ImageTask) {
-  return terminalStatuses.has(task.status) || Boolean(task.progress && promptQueueReleaseProgresses.has(task.progress));
+  return terminalStatuses.has(normalizeImageTask(task).status) || Boolean(task.progress && promptQueueReleaseProgresses.has(task.progress));
 }
 
 export function compactTaskForStorage(task: TaskRecord) {
@@ -243,6 +258,30 @@ export function localSortKey(batchId: number, index: number) {
 
 export function taskStatusLabel(status: ImageTask["status"]) {
   return taskStatusLabels[status] || status;
+}
+
+export function hasFailedTaskSignal(task: Pick<ImageTask, "status"> & Partial<Pick<ImageTask, "error" | "progress">>) {
+  if (terminalStatuses.has(task.status)) return task.status === "error";
+  if (String(task.status).toLowerCase() === "failed") return true;
+  if (task.error?.trim()) return true;
+  const progress = task.progress?.trim().toLowerCase();
+  return Boolean(progress && (
+    progressTextLabels[progress] === "失败"
+    || progress.includes("fail")
+    || progress.includes("error")
+    || progress.includes("失败")
+  ));
+}
+
+export function normalizeImageTask<T extends ImageTask>(task: T): T {
+  if (!hasFailedTaskSignal(task)) return task;
+  const failureMessage = task.error?.trim() || progressText(task.progress) || "处理失败";
+  return {
+    ...task,
+    status: "error",
+    error: failureMessage,
+    progress: task.progress || "failed",
+  };
 }
 
 export function progressText(value?: string) {

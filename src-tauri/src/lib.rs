@@ -89,6 +89,7 @@ struct LocalImage {
     name: String,
     path: String,
     thumbnail_path: Option<String>,
+    thumbnail_data_url: Option<String>,
     prompt: Option<String>,
     created_at: String,
     local_created_at: String,
@@ -898,8 +899,16 @@ fn scan_local_images(
             .to_string();
         let bytes = fs::read(&path).map_err(|error| format!("读取本地图片失败：{error}"))?;
         let (width, height) = image_dimensions_from_bytes(&bytes);
-        let thumbnail_path = ensure_thumbnail_file(&path, &bytes)
-            .map(|value| value.to_string_lossy().to_string());
+        let thumbnail_path = thumbnail_path_for_image(&path).filter(|value| value.exists());
+        let thumbnail_data_url = thumbnail_path
+            .as_ref()
+            .and_then(|value| fs::read(value).ok())
+            .map(|thumbnail_bytes| data_url_from_bytes(&thumbnail_bytes, "image/jpeg"))
+            .or_else(|| {
+                thumbnail_bytes_from_image_bytes(&bytes)
+                    .map(|thumbnail_bytes| data_url_from_bytes(&thumbnail_bytes, "image/jpeg"))
+            });
+        let thumbnail_path = thumbnail_path.map(|value| value.to_string_lossy().to_string());
         let prompt = image_prompt_from_metadata(&path);
         items.push(LocalImage {
             id: format!("local:{rel}"),
@@ -907,6 +916,7 @@ fn scan_local_images(
             name,
             path: path.to_string_lossy().to_string(),
             thumbnail_path,
+            thumbnail_data_url,
             prompt,
             created_at,
             local_created_at,

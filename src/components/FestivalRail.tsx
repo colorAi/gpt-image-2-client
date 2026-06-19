@@ -64,6 +64,10 @@ export function FestivalBackdrop() {
   );
 }
 
+export function FestivalRailSeal() {
+  return <span className="festival-rail-tag festival-rail-seal" aria-hidden="true">端午</span>;
+}
+
 export function FestivalDragonBoatRail() {
   return (
     <div className="festival-rail-scene" aria-hidden="true">

@@ -6,8 +6,7 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/Users/hongtao/.cargo/bin:$PATH"
 PROJECT_DIR="$(pwd)"
 REPAIR_SCRIPT="$PROJECT_DIR/scripts/修复应用已损坏.command"
 REPAIR_FILE_NAME="如果提示应用已损坏，请双击修复.command"
-BUILD_TARGET="universal-apple-darwin"
-BUILD_ROOT="src-tauri/target/$BUILD_TARGET/release"
+BUILD_ROOT="src-tauri/target/release"
 BUNDLE_ROOT="$BUILD_ROOT/bundle"
 
 echo "=========================================="
@@ -15,8 +14,7 @@ echo "     幻影畅享版 Tauri macOS Build"
 echo "=========================================="
 echo
 echo "Project: phantom-image-client"
-echo "Target: Universal macOS (Apple Silicon + Intel)"
-echo "Running: npm run tauri:build:mac -- --target $BUILD_TARGET --no-sign"
+echo "Running: npm run tauri:build:mac -- --no-sign"
 echo
 
 if [ ! -d "node_modules" ]; then
@@ -33,7 +31,7 @@ if [ ! -d "node_modules" ]; then
   echo
 fi
 
-npm run tauri:build:mac -- --target "$BUILD_TARGET" --no-sign
+npm run tauri:build:mac -- --no-sign
 BUILD_EXIT_CODE=$?
 
 echo
@@ -44,16 +42,6 @@ else
   DMG_PATH=$(ls -t "$BUNDLE_ROOT"/dmg/*.dmg 2>/dev/null | head -n 1)
   DMG_BUILDER="$BUNDLE_ROOT/dmg/bundle_dmg.sh"
   DMG_ICON="$BUNDLE_ROOT/dmg/icon.icns"
-
-  if [ -n "$APP_PATH" ]; then
-    echo "Applying an ad-hoc signature for unsigned distribution..."
-    codesign --force --deep --sign - "$APP_PATH"
-    BUILD_EXIT_CODE=$?
-    if [ "$BUILD_EXIT_CODE" -eq 0 ]; then
-      codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-      BUILD_EXIT_CODE=$?
-    fi
-  fi
 
   if [ "$BUILD_EXIT_CODE" -eq 0 ] && [ -n "$APP_PATH" ] && [ -n "$DMG_PATH" ] && [ -f "$DMG_BUILDER" ] && [ -f "$REPAIR_SCRIPT" ]; then
     echo "Adding the macOS repair shortcut to the DMG..."
