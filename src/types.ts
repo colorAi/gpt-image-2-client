@@ -28,6 +28,8 @@ export type ImageEditResponse = {
 export type TaskRecord = ImageTask & {
   prompt: string;
   localCreatedAt: string;
+  runningStartedAt?: number;
+  runningElapsedBase?: number;
   clientTaskId?: string;
   isLocalPending?: boolean;
   localBatchId?: number;

@@ -54,6 +54,7 @@ export default function TaskResultGrid({
   const [selected, setSelected] = useState<string[]>([]);
   const [columns, setColumns] = useState(5);
   const [isPrivacyMode, setIsPrivacyMode] = useState(false);
+  const [privateItemIds, setPrivateItemIds] = useState<string[]>([]);
   const [clockNow, setClockNow] = useState(Date.now());
   const visibleTasks = useMemo(() => tasks.filter((task) => (
     isActiveTask(task)
@@ -83,10 +84,15 @@ export default function TaskResultGrid({
   const totalCount = visibleTasks.length + visibleLocalResults.length;
   const totalLocalPages = Math.max(1, Math.ceil(localResultTotal / localResultPageSize));
   const selectedSet = new Set(selected);
-  const hasActiveCards = visibleTasks.some(isActiveTask);
+  const privateItemSet = new Set(privateItemIds);
+  const hasTickingCards = visibleTasks.some((task) => (
+    !task.data?.some((item) => item.b64_json)
+    && (task.status === "running" || hasPendingPreviewHydration(task))
+  ));
 
   useEffect(() => {
     setSelected((current) => current.filter((id) => visibleTasks.some((task) => task.id === id) || visibleLocalResults.some((item) => item.id === id)));
+    setPrivateItemIds((current) => current.filter((id) => visibleTasks.some((task) => task.id === id) || visibleLocalResults.some((item) => item.id === id)));
   }, [visibleTasks, visibleLocalResults]);
 
   useEffect(() => {
@@ -100,11 +106,18 @@ export default function TaskResultGrid({
   }, [isPrivacyMode]);
 
   useEffect(() => {
-    if (!hasActiveCards) return;
+    if (!hasTickingCards) return;
     setClockNow(Date.now());
-    const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
+    const timer = window.setInterval(() => setClockNow(Date.now()), 250);
     return () => window.clearInterval(timer);
-  }, [hasActiveCards]);
+  }, [hasTickingCards]);
+
+  const toggleItemPrivacy = (itemId: string) => {
+    setPrivateItemIds((current) => current.includes(itemId)
+      ? current.filter((id) => id !== itemId)
+      : [...current, itemId]);
+    if (lightboxItem?.id === itemId) setLightboxIndex(null);
+  };
 
   const deleteItems = async (itemIds: string[]) => {
     const taskIds = itemIds.filter((id) => visibleTasks.some((task) => task.id === id));
@@ -201,27 +214,34 @@ export default function TaskResultGrid({
               const isActive = task.status === "queued" || task.status === "running";
               const isHydrating = hasPendingPreviewHydration(task);
               const taskError = task.error || (task.localSaveError ? `本地保存失败：${task.localSaveError}` : "");
+              const isItemPrivate = privateItemSet.has(task.id);
+              const isMasked = isPrivacyMode || isItemPrivate;
               return (
                 <article className="image-card" key={task.id}>
-                  <label className="task-select">
-                    <input
-                      type="checkbox"
-                      checked={selectedSet.has(task.id)}
-                      onChange={(event) => setSelected((current) => event.target.checked ? [...current, task.id] : current.filter((taskId) => taskId !== task.id))}
-                    />
-                    选择
-                  </label>
+                  <div className="image-card-header">
+                    <label className="task-select">
+                      <input
+                        type="checkbox"
+                        checked={selectedSet.has(task.id)}
+                        onChange={(event) => setSelected((current) => event.target.checked ? [...current, task.id] : current.filter((taskId) => taskId !== task.id))}
+                      />
+                      选择
+                    </label>
+                    <PrivacyToggle isPrivate={isMasked} isGlobal={isPrivacyMode} onToggle={() => toggleItemPrivacy(task.id)} />
+                  </div>
                   <div className="image-frame">
-                    <button className={`image-preview ${firstImage ? "" : "placeholder"} ${isPrivacyMode && firstImage ? "privacy-masked" : ""}`} onClick={() => firstImage && !isPrivacyMode && setLightboxIndex(previewIndexById.get(task.id) ?? null)} disabled={!firstImage}>
-                      {firstImage && !isPrivacyMode ? <img src={firstImage} alt={task.prompt} /> : null}
-                      {firstImage && isPrivacyMode ? <PrivacyMask /> : null}
+                    <button className={`image-preview ${firstImage ? "" : "placeholder"} ${isMasked && firstImage ? "privacy-masked" : ""}`} onClick={() => firstImage && !isMasked && setLightboxIndex(previewIndexById.get(task.id) ?? null)} disabled={!firstImage}>
+                      {firstImage && !isMasked ? <img src={firstImage} alt={task.prompt} /> : null}
+                      {firstImage && isMasked ? <PrivacyMask /> : null}
                       {!firstImage && isActive ? (
                         <GenerationProgress
-                          elapsed={formatElapsedTime(taskElapsedSeconds(task, clockNow))}
+                          elapsed={task.status === "running" ? formatElapsedTime(taskElapsedSeconds(task, clockNow)) : undefined}
                           label={task.isLocalPending ? "等待提交" : progressText(task.progress) || "生成中"}
                         />
                       ) : null}
-                      {!firstImage && !isActive && isHydrating ? <GenerationProgress label="加载结果" /> : null}
+                      {!firstImage && !isActive && isHydrating ? (
+                        <GenerationProgress elapsed={formatElapsedTime(taskElapsedSeconds(task, clockNow))} label="加载结果" />
+                      ) : null}
                       {taskError ? <TaskErrorOverlay message={taskError} compact={Boolean(firstImage)} /> : null}
                       {!firstImage && !isActive && !isHydrating && !taskError ? <ImageIcon size={30} /> : null}
                     </button>
@@ -253,39 +273,46 @@ export default function TaskResultGrid({
                 </article>
               );
             })}
-            {visibleLocalResults.map((item) => (
-              <article className="image-card local-result-card" key={item.id}>
-                <label className="task-select">
-                  <input
-                    type="checkbox"
-                    checked={selectedSet.has(item.id)}
-                    onChange={(event) => setSelected((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))}
-                  />
-                  选择
-                </label>
-                <div className="image-frame">
-                  <button className={`image-preview ${isPrivacyMode ? "privacy-masked" : ""}`} onClick={() => !isPrivacyMode && setLightboxIndex(previewIndexById.get(item.id) ?? null)}>
-                    {isPrivacyMode ? <PrivacyMask /> : <img src={item.url} alt={item.name} />}
-                  </button>
-                  <button className="saved-badge" type="button" title="定位文件" aria-label="定位文件" onClick={() => void revealLocalImage(item.path)}>
-                    <FolderOpen size={15} />
-                  </button>
-                  <button className="image-delete" type="button" title="删除" onClick={() => void deleteItems([item.id])}>
-                    <Trash2 size={15} />
-                  </button>
-                  <button className="image-card-action use-reference" type="button" title="一键加入参考图" onClick={() => void onAddReference(item.originalUrl, item.name.replace(/\.[^.]+$/, ""))}>
-                    <ImagePlus size={15} />
-                  </button>
-                </div>
-                <div className="image-meta">
-                  <strong title={item.name}>{compactLocalResultTitle(item)}</strong>
-                </div>
-                <div className="card-actions">
-                  <span className="task-time">{formatSize(item.size)}</span>
-                  <span className="task-time">{formatResolution(item.width, item.height)}</span>
-                </div>
-              </article>
-            ))}
+            {visibleLocalResults.map((item) => {
+              const isItemPrivate = privateItemSet.has(item.id);
+              const isMasked = isPrivacyMode || isItemPrivate;
+              return (
+                <article className="image-card local-result-card" key={item.id}>
+                  <div className="image-card-header">
+                    <label className="task-select">
+                      <input
+                        type="checkbox"
+                        checked={selectedSet.has(item.id)}
+                        onChange={(event) => setSelected((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))}
+                      />
+                      选择
+                    </label>
+                    <PrivacyToggle isPrivate={isMasked} isGlobal={isPrivacyMode} onToggle={() => toggleItemPrivacy(item.id)} />
+                  </div>
+                  <div className="image-frame">
+                    <button className={`image-preview ${isMasked ? "privacy-masked" : ""}`} onClick={() => !isMasked && setLightboxIndex(previewIndexById.get(item.id) ?? null)}>
+                      {isMasked ? <PrivacyMask /> : <img src={item.url} alt={item.name} />}
+                    </button>
+                    <button className="saved-badge" type="button" title="定位文件" aria-label="定位文件" onClick={() => void revealLocalImage(item.path)}>
+                      <FolderOpen size={15} />
+                    </button>
+                    <button className="image-delete" type="button" title="删除" onClick={() => void deleteItems([item.id])}>
+                      <Trash2 size={15} />
+                    </button>
+                    <button className="image-card-action use-reference" type="button" title="一键加入参考图" onClick={() => void onAddReference(item.originalUrl, item.name.replace(/\.[^.]+$/, ""))}>
+                      <ImagePlus size={15} />
+                    </button>
+                  </div>
+                  <div className="image-meta">
+                    <strong title={item.name}>{compactLocalResultTitle(item)}</strong>
+                  </div>
+                  <div className="card-actions">
+                    <span className="task-time">{formatSize(item.size)}</span>
+                    <span className="task-time">{formatResolution(item.width, item.height)}</span>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         ) : (
           <EmptyState icon={isLocalResultsLoading ? <LoaderCircle size={30} className="spin" /> : <ImageIcon size={30} />} title={isLocalResultsLoading ? "正在读取本地结果" : "提交任务或选择本地结果目录后会出现在这里"} />
@@ -335,6 +362,31 @@ function PrivacyMask() {
       <EyeOff size={26} />
       <span>隐私模式</span>
     </span>
+  );
+}
+
+function PrivacyToggle({
+  isPrivate,
+  isGlobal,
+  onToggle,
+}: {
+  isPrivate: boolean;
+  isGlobal: boolean;
+  onToggle: () => void;
+}) {
+  const title = isGlobal ? "已开启一键隐私模式" : isPrivate ? "显示这张图片" : "隐藏这张图片";
+  return (
+    <button
+      className={`card-privacy-toggle ${isPrivate ? "active" : ""}`}
+      type="button"
+      title={title}
+      aria-label={title}
+      aria-pressed={isPrivate}
+      disabled={isGlobal}
+      onClick={onToggle}
+    >
+      {isPrivate ? <EyeOff size={15} /> : <Eye size={15} />}
+    </button>
   );
 }
 

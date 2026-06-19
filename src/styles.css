@@ -933,6 +933,49 @@ textarea:focus {
   position: relative;
 }
 
+.image-card-header {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 12px;
+}
+
+.image-card-header .task-select {
+  padding: 0;
+}
+
+.card-privacy-toggle {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--field-bg);
+  color: var(--muted);
+  padding: 0;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.card-privacy-toggle:hover:not(:disabled),
+.card-privacy-toggle:focus-visible {
+  border-color: var(--accent-border);
+  color: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.card-privacy-toggle.active {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.card-privacy-toggle:disabled {
+  opacity: 0.72;
+}
+
 .image-preview {
   position: relative;
   display: flex;

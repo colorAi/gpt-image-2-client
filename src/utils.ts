@@ -122,10 +122,33 @@ export function formatElapsedTime(totalSeconds: number) {
     : `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
-export function taskElapsedSeconds(task: TaskRecord, now: number) {
-  const localStartedAt = task.localBatchId || Date.parse(task.created_at);
-  const localElapsed = Number.isFinite(localStartedAt) ? Math.max(0, Math.floor((now - localStartedAt) / 1000)) : 0;
-  return Math.max(localElapsed, task.elapsed_secs || 0);
+export function taskElapsedSeconds(task: TaskRecord, now = Date.now()) {
+  if (task.status !== "running" && !task.runningStartedAt) return 0;
+  const base = Math.max(0, task.runningElapsedBase ?? task.elapsed_secs ?? 0);
+  if (!task.runningStartedAt) return Math.floor(base);
+  return Math.max(0, Math.floor(base + (now - task.runningStartedAt) / 1000));
+}
+
+export function withRunningTimer(task: TaskRecord, now = Date.now()) {
+  if (task.status !== "running" || task.runningStartedAt) return task;
+  return {
+    ...task,
+    runningStartedAt: now,
+    runningElapsedBase: Math.max(0, task.elapsed_secs || 0),
+  };
+}
+
+export function mergeTaskUpdate(current: TaskRecord, next: ImageTask, now = Date.now()) {
+  const merged = { ...current, ...next };
+  if (next.status !== "running") return merged;
+  if (current.status === "running" && current.runningStartedAt) {
+    return {
+      ...merged,
+      runningStartedAt: current.runningStartedAt,
+      runningElapsedBase: current.runningElapsedBase ?? current.elapsed_secs ?? 0,
+    };
+  }
+  return withRunningTimer(merged, now);
 }
 
 export function aspectLabelFromSize(size?: string) {

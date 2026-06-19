@@ -29,10 +29,11 @@ export const promptQueueReleaseProgresses = new Set([
   "completed",
   "complete",
 ]);
-export const maxReferenceImageEdge = 2048;
-export const referenceImageSizeThreshold = 5 * 1024 * 1024;
+export const maxReferenceImageEdge = 1536;
+export const referenceImageSizeThreshold = 2 * 1024 * 1024;
 export const referenceImageJpegQuality = 0.9;
 export const maxClientBatchConcurrency = 5;
+export const maxClientEditConcurrency = 1;
 export const maxPreviewHydrateAttempts = 5;
 export const localResultPageSizeOptions = [10, 20, 50];
 export const themeStorageKey = "phantom-image-theme";

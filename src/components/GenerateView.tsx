@@ -4,9 +4,9 @@ import { Image as ImageIcon, Languages, LoaderCircle, Paintbrush, Send, Upload, 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { askPromptAssistant, createEditTask, createGenerationTask, fetchImageTasks, translatePromptText } from "../api";
 import type { ApiClient } from "../api";
-import { aspectOptions, defaultImageModel, maxClientBatchConcurrency, maxPreviewHydrateAttempts, qualityOptions } from "../constants";
+import { aspectOptions, defaultImageModel, maxClientBatchConcurrency, maxClientEditConcurrency, maxPreviewHydrateAttempts, qualityOptions } from "../constants";
 import type { ConfirmRequest, ImageTask, LocalResultRecord, NativeDroppedFile, NativeLocalImagePage, PendingPromptJob, PromptAssistantMessage, PromptQueueStats, SubmitPromptOptions, TaskRecord, Toast } from "../types";
-import { aspectLabelFromSize, compactTaskForStorage, compressReferenceImage, fileFromDataUrl, fileToDataUrl, getErrorMessage, hasPendingPreviewHydration, isImageFile, isPollableTask, localDateString, localSortKey, nativeLocalImageToRecord, shouldApplyTaskUpdate, shouldReleasePromptQueueSlot, splitPromptGroups } from "../utils";
+import { aspectLabelFromSize, compactTaskForStorage, compressReferenceImage, fileFromDataUrl, fileToDataUrl, getErrorMessage, hasPendingPreviewHydration, isImageFile, isPollableTask, localDateString, localSortKey, mergeTaskUpdate, nativeLocalImageToRecord, shouldApplyTaskUpdate, shouldReleasePromptQueueSlot, splitPromptGroups, withRunningTimer } from "../utils";
 import ConfirmDialog from "./ConfirmDialog";
 import TaskResultGrid from "./TaskResultGrid";
 
@@ -55,6 +55,7 @@ export default function GenerateView({
   const saveTasksTimer = useRef<number | null>(null);
   const pendingPromptJobs = useRef<PendingPromptJob[]>([]);
   const runningPromptJobIds = useRef(new Set<string>());
+  const runningEditPromptJobIds = useRef(new Set<string>());
   const promptQueueReleaseWaiters = useRef(new Map<string, () => void>());
   const previewHydrateAttempts = useRef(new Map<string, number>());
   const previewHydrateRetryAfter = useRef(new Map<string, number>());
@@ -110,7 +111,7 @@ export default function GenerateView({
     let cancelled = false;
     invoke<TaskRecord[]>("load_tasks").then((items) => {
       if (cancelled) return;
-      setTasks(Array.isArray(items) ? items : []);
+      setTasks(Array.isArray(items) ? items.map((item) => withRunningTimer(item)) : []);
       setTasksLoaded(true);
     }).catch((error) => {
       if (!cancelled) {
@@ -283,9 +284,10 @@ export default function GenerateView({
         if (cancelled) return;
         const taskMap = new Map(data.items.map((item) => [item.id, item]));
         data.items.forEach(releasePromptQueueWaiter);
+        const receivedAt = Date.now();
         setTasks((current) => current.map((item) => {
           const next = taskMap.get(item.id);
-          return next && shouldApplyTaskUpdate(item, next) ? { ...item, ...next } : item;
+          return next && shouldApplyTaskUpdate(item, next) ? mergeTaskUpdate(item, next, receivedAt) : item;
         }));
       } catch {
         // The next poll can recover.
@@ -419,7 +421,7 @@ export default function GenerateView({
       const task = job.files.length
         ? await createEditTask(api, { clientTaskId: job.id, files: job.files, prompt: job.prompt, model: job.model, size: job.size, quality: job.quality })
         : await createGenerationTask(api, { clientTaskId: job.id, prompt: job.prompt, model: job.model, size: job.size, quality: job.quality });
-      const record: TaskRecord = {
+      const record = withRunningTimer({
         ...task,
         prompt: job.prompt,
         localCreatedAt: job.localCreatedAt,
@@ -428,7 +430,7 @@ export default function GenerateView({
         localBatchId: job.localBatchId,
         localBatchIndex: job.localBatchIndex,
         localSortKey: job.localSortKey,
-      };
+      });
       setTasks((current) => {
         const replaced = current.map((item) => item.id === job.id || item.clientTaskId === job.id ? record : item);
         return replaced.some((item) => item.id === record.id) ? replaced : [record, ...replaced].slice(0, 100);
@@ -453,14 +455,20 @@ export default function GenerateView({
 
     const launchNext = () => {
       while (runningPromptJobIds.current.size < maxClientBatchConcurrency && pendingPromptJobs.current.length) {
-        const job = pendingPromptJobs.current.shift();
+        const nextJobIndex = pendingPromptJobs.current.findIndex((job) => (
+          !job.files.length || runningEditPromptJobIds.current.size < maxClientEditConcurrency
+        ));
+        if (nextJobIndex < 0) break;
+        const [job] = pendingPromptJobs.current.splice(nextJobIndex, 1);
         if (!job) continue;
         runningPromptJobIds.current.add(job.id);
+        if (job.files.length) runningEditPromptJobIds.current.add(job.id);
         syncQueueStats();
         void runPromptJob(job).catch((error) => {
           notify(getErrorMessage(error), "error");
         }).finally(() => {
           runningPromptJobIds.current.delete(job.id);
+          runningEditPromptJobIds.current.delete(job.id);
           syncQueueStats();
           launchNext();
         });
