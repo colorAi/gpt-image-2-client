@@ -37,6 +37,7 @@ export const maxClientEditConcurrency = 1;
 export const maxPreviewHydrateAttempts = 5;
 export const localResultPageSizeOptions = [10, 20, 50];
 export const themeStorageKey = "phantom-image-theme";
+export const appearanceStorageKey = "phantom-image-appearance";
 export const taskStatusLabels: Record<ImageTask["status"], string> = {
   queued: "排队中",
   running: "生成中",

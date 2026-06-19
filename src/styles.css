@@ -86,6 +86,68 @@
   --shadow-float: 0 10px 24px rgba(0, 0, 0, 0.36);
 }
 
+:root[data-appearance="dragon-boat"] {
+  --page-base: #f4f1e7;
+  --page-bg: linear-gradient(135deg, #f9f8ef 0%, #edf6eb 48%, #e4f2eb 100%);
+  --text: #25332d;
+  --text-strong: #2c4338;
+  --muted: #69796f;
+  --panel: rgba(255, 255, 250, 0.92);
+  --panel-soft: rgba(249, 253, 246, 0.82);
+  --panel-strong: rgba(255, 255, 250, 0.98);
+  --sidebar-bg: linear-gradient(180deg, rgba(235, 247, 230, 0.98), rgba(248, 250, 238, 0.94) 44%, rgba(221, 243, 232, 0.98));
+  --field-bg: #fffefa;
+  --surface-subtle: #f2f8ef;
+  --surface-muted: #f7faf3;
+  --image-bg: #e7f1e7;
+  --border: rgba(52, 101, 72, 0.15);
+  --border-subtle: rgba(52, 101, 72, 0.1);
+  --border-strong: rgba(52, 101, 72, 0.23);
+  --border-dashed: rgba(52, 101, 72, 0.3);
+  --accent: #174f3b;
+  --accent-hover: #2f7659;
+  --accent-soft: #e9f3e9;
+  --accent-softer: #f2f8ef;
+  --accent-wash: #e4f3e7;
+  --accent-ring: rgba(47, 118, 89, 0.14);
+  --accent-border: rgba(47, 118, 89, 0.24);
+  --festival-gold: #c5963c;
+  --festival-red: #a74432;
+  --shadow: 0 16px 42px rgba(43, 83, 58, 0.09);
+}
+
+:root[data-theme="dark"][data-appearance="dragon-boat"] {
+  --page-base: #0d1612;
+  --page-bg: linear-gradient(135deg, #0d1612 0%, #142019 48%, #102b22 100%);
+  --text: #e5eee8;
+  --text-strong: #f1f7f3;
+  --muted: #9eb2a5;
+  --panel: rgba(22, 34, 27, 0.9);
+  --panel-soft: rgba(18, 31, 24, 0.82);
+  --panel-strong: rgba(24, 37, 29, 0.97);
+  --sidebar-bg: linear-gradient(180deg, rgba(16, 35, 25, 0.98), rgba(13, 25, 20, 0.96) 48%, rgba(18, 48, 37, 0.98));
+  --field-bg: #111c16;
+  --surface-subtle: #14251b;
+  --surface-muted: #17271e;
+  --image-bg: #1b3025;
+  --border: rgba(167, 218, 177, 0.13);
+  --border-subtle: rgba(167, 218, 177, 0.09);
+  --border-strong: rgba(167, 218, 177, 0.2);
+  --border-dashed: rgba(167, 218, 177, 0.28);
+  --accent: #68c393;
+  --accent-hover: #88d5aa;
+  --accent-soft: rgba(104, 195, 147, 0.16);
+  --accent-softer: rgba(104, 195, 147, 0.1);
+  --accent-wash: rgba(104, 195, 147, 0.18);
+  --accent-ring: rgba(104, 195, 147, 0.22);
+  --accent-border: rgba(104, 195, 147, 0.34);
+  --festival-gold: #e0b85d;
+  --festival-red: #e48168;
+  --success: #69d89b;
+  --warning: #efbd66;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.3);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -114,9 +176,31 @@ button:disabled {
 }
 
 .app-shell {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr);
   min-height: 100vh;
+}
+
+.festival-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+:root[data-appearance="dragon-boat"] .app-shell::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    radial-gradient(circle at 88% 6%, rgba(197, 150, 60, 0.13), transparent 23%),
+    repeating-radial-gradient(ellipse at 76% 110%, transparent 0 28px, rgba(47, 118, 89, 0.07) 29px 31px, transparent 32px 55px);
+  content: "";
+  pointer-events: none;
 }
 
 .sidebar {
@@ -157,6 +241,67 @@ button:disabled {
   border-radius: 12px;
   background: var(--accent);
   color: var(--on-accent);
+}
+
+.festival-rail-tag {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  width: 38px;
+  min-height: 64px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--festival-gold) 62%, #7c251c);
+  border-radius: 15px 13px 17px 12px / 16px 19px 13px 18px;
+  background:
+    radial-gradient(circle at 28% 18%, rgba(255, 236, 177, 0.2), transparent 34%),
+    linear-gradient(145deg, #9c3b2d, #783024 62%, #65281f);
+  color: color-mix(in srgb, var(--festival-gold) 86%, #fff4c7);
+  padding: 8px 0;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.08;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-orientation: upright;
+  transform: translateX(-50%);
+  writing-mode: vertical-rl;
+  box-shadow:
+    0 6px 14px rgba(90, 27, 20, 0.2),
+    inset 0 0 0 1px rgba(255, 224, 147, 0.16),
+    inset 0 -8px 14px rgba(82, 24, 18, 0.16);
+}
+
+.festival-rail-scene {
+  position: absolute;
+  top: 204px;
+  bottom: 126px;
+  left: 50%;
+  width: 72px;
+  overflow: visible;
+  transform: translateX(-50%);
+}
+
+.festival-rail-scene::after {
+  position: absolute;
+  right: 0;
+  bottom: -22px;
+  left: 0;
+  height: 22px;
+  background:
+    linear-gradient(180deg, rgba(57, 167, 160, 0.68), rgba(57, 167, 160, 0)),
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-hover) 36%, transparent), transparent);
+  content: "";
+  pointer-events: none;
+}
+
+.festival-rail-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .brand h1,
@@ -254,6 +399,73 @@ button:disabled {
 .settings-main {
   display: grid;
   gap: 12px;
+}
+
+.appearance-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.appearance-option {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--field-bg);
+  color: var(--text);
+  padding: 9px;
+  text-align: left;
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.appearance-option:hover,
+.appearance-option:focus-visible {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+  outline: none;
+}
+
+.appearance-option.active {
+  border-color: var(--accent-hover);
+  background: var(--accent-softer);
+}
+
+.appearance-option > span:last-child {
+  display: grid;
+  gap: 2px;
+}
+
+.appearance-option strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.appearance-option small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.appearance-preview {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+.default-preview {
+  background: #153e3b;
+  color: #ffffff;
+}
+
+.festival-preview {
+  border: 1px solid rgba(197, 150, 60, 0.45);
+  background: linear-gradient(145deg, #2f7659, #174f3b);
+  color: #fff4c9;
 }
 
 .settings-popover-header {
@@ -374,6 +586,7 @@ textarea:focus {
 
 .btn,
 .icon-btn {
+  position: relative;
   display: inline-flex;
   gap: 7px;
   align-items: center;
@@ -385,12 +598,44 @@ textarea:focus {
   min-height: 38px;
   padding: 0 13px;
   font-weight: 700;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
 }
 
 .btn.primary {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--on-accent);
+}
+
+.btn:hover:not(:disabled),
+.icon-btn:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.btn:active:not(:disabled),
+.icon-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.button-icon {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.btn.primary .button-icon {
+  background: rgba(255, 255, 255, 0.16);
+  color: currentColor;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 
 .btn.danger,
@@ -1479,6 +1724,328 @@ textarea:focus {
   background: var(--danger-solid);
 }
 
+:root[data-appearance="dragon-boat"] .sidebar {
+  border-right-color: color-mix(in srgb, var(--accent-hover) 24%, transparent);
+  background: var(--sidebar-bg);
+  box-shadow: 8px 0 30px rgba(44, 96, 65, 0.08);
+}
+
+:root[data-appearance="dragon-boat"] .rail-brand h1 {
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  letter-spacing: 0.08em;
+  text-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+:root[data-appearance="dragon-boat"] .festival-brand-mark {
+  border: 1px solid color-mix(in srgb, var(--festival-gold) 28%, var(--accent-border));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 58%),
+    color-mix(in srgb, var(--accent) 82%, #1e7a56);
+  color: color-mix(in srgb, var(--festival-gold) 42%, #dff7e8);
+  box-shadow: 0 9px 18px rgba(12, 45, 29, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+:root[data-appearance="dragon-boat"] .icon-btn.rail-theme {
+  border-color: color-mix(in srgb, var(--festival-gold) 36%, var(--accent-border));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.44), transparent 62%),
+    color-mix(in srgb, var(--field-bg) 86%, var(--accent-soft));
+  color: var(--accent);
+  box-shadow: 0 7px 16px rgba(43, 86, 58, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+}
+
+:root[data-appearance="dragon-boat"] .generate-view {
+  border-color: color-mix(in srgb, var(--accent-hover) 20%, var(--border));
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 98% 2%, color-mix(in srgb, var(--accent-soft) 72%, transparent), transparent 25%),
+    rgba(236, 246, 232, 0.64);
+  box-shadow: 0 20px 55px rgba(42, 84, 57, 0.1);
+  backdrop-filter: blur(2px);
+}
+
+:root[data-appearance="dragon-boat"] .composer {
+  position: relative;
+  border-right-color: color-mix(in srgb, var(--accent-hover) 20%, var(--border));
+  background:
+    radial-gradient(ellipse at 108% 2%, color-mix(in srgb, var(--accent-soft) 82%, transparent) 0 9%, transparent 9.5%),
+    radial-gradient(ellipse at 104% 5%, color-mix(in srgb, var(--accent-soft) 60%, transparent) 0 6%, transparent 6.5%),
+    linear-gradient(180deg, rgba(245, 251, 241, 0.88), rgba(232, 244, 228, 0.8));
+}
+
+:root[data-appearance="dragon-boat"] .results-panel {
+  background:
+    linear-gradient(135deg, transparent 0 82%, color-mix(in srgb, var(--accent-soft) 42%, transparent) 82% 100%),
+    rgba(237, 247, 233, 0.64);
+}
+
+:root[data-appearance="dragon-boat"] .section-bar {
+  border-bottom-color: color-mix(in srgb, var(--accent-hover) 18%, var(--border));
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--accent-soft) 72%, var(--panel)), var(--panel) 58%);
+}
+
+:root[data-appearance="dragon-boat"] .section-bar h3,
+:root[data-appearance="dragon-boat"] .settings-popover-header h2 {
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  letter-spacing: 0.04em;
+}
+
+:root[data-appearance="dragon-boat"] .assistant-chat,
+:root[data-appearance="dragon-boat"] .reference-panel,
+:root[data-appearance="dragon-boat"] .empty-state {
+  border-radius: 12px;
+  background:
+    radial-gradient(ellipse at 100% 0, color-mix(in srgb, var(--accent-soft) 72%, transparent) 0 12%, transparent 12.5%),
+    var(--surface-subtle);
+}
+
+:root[data-appearance="dragon-boat"] input,
+:root[data-appearance="dragon-boat"] select,
+:root[data-appearance="dragon-boat"] textarea,
+:root[data-appearance="dragon-boat"] .btn,
+:root[data-appearance="dragon-boat"] .icon-btn,
+:root[data-appearance="dragon-boat"] .column-control,
+:root[data-appearance="dragon-boat"] .pager-control {
+  border-radius: 10px;
+}
+
+:root[data-appearance="dragon-boat"] input,
+:root[data-appearance="dragon-boat"] select,
+:root[data-appearance="dragon-boat"] textarea {
+  border-color: color-mix(in srgb, var(--accent-hover) 19%, var(--border-strong));
+  background: color-mix(in srgb, var(--field-bg) 94%, var(--accent-soft));
+}
+
+:root[data-appearance="dragon-boat"] .btn:hover:not(:disabled),
+:root[data-appearance="dragon-boat"] .icon-btn:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  box-shadow: 0 9px 22px rgba(45, 102, 69, 0.12);
+  transform: translateY(-1px);
+}
+
+:root[data-appearance="dragon-boat"] .btn.primary,
+:root[data-appearance="dragon-boat"] .icon-btn.rail-settings,
+:root[data-appearance="dragon-boat"] .run-button {
+  border-color: #286846;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 48%),
+    linear-gradient(135deg, #1f5c42, #3f8c61 58%, #2d744d);
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(36, 99, 71, 0.22), inset 0 1px rgba(255, 255, 255, 0.18);
+}
+
+:root[data-appearance="dragon-boat"] .run-button {
+  isolation: isolate;
+  width: 100%;
+  min-height: 48px;
+  overflow: hidden;
+  border-radius: 12px;
+  padding-right: 78px;
+  padding-left: 84px;
+  background:
+    linear-gradient(90deg, rgba(14, 62, 37, 0.5), transparent 18%, transparent 82%, rgba(14, 62, 37, 0.42)),
+    radial-gradient(circle at 16% 20%, rgba(246, 219, 153, 0.22), transparent 22%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 50%),
+    linear-gradient(100deg, #1f5d42 0%, #3f8d61 52%, #2d754f 100%);
+  letter-spacing: 0.04em;
+  box-shadow: 0 13px 26px rgba(37, 105, 67, 0.24), inset 0 -2px rgba(14, 70, 40, 0.18), inset 0 1px rgba(255, 255, 255, 0.22);
+}
+
+:root[data-appearance="dragon-boat"] .run-button .button-icon {
+  position: relative;
+  z-index: 1;
+}
+
+:root[data-appearance="dragon-boat"] .festival-button-dragon-head,
+:root[data-appearance="dragon-boat"] .festival-button-dragon-tail {
+  position: absolute;
+  display: block;
+  z-index: 0;
+  background: color-mix(in srgb, var(--festival-gold) 54%, #d9efd0);
+  opacity: 0.38;
+  pointer-events: none;
+  user-select: none;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+:root[data-appearance="dragon-boat"] .festival-button-dragon-head {
+  left: 8px;
+  bottom: -17px;
+  width: 58px;
+  height: 72px;
+  filter: drop-shadow(0 4px 3px rgba(9, 43, 27, 0.08));
+  -webkit-mask-image: url("/festival-dragon-head.png");
+  mask-image: url("/festival-dragon-head.png");
+}
+
+:root[data-appearance="dragon-boat"] .festival-button-dragon-tail {
+  right: 9px;
+  bottom: -7px;
+  width: 58px;
+  height: 62px;
+  filter: drop-shadow(0 4px 3px rgba(9, 43, 27, 0.06));
+  -webkit-mask-image: url("/festival-dragon-tail.png");
+  mask-image: url("/festival-dragon-tail.png");
+}
+
+:root[data-appearance="dragon-boat"] .run-button::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent) -120% 0 / 42% 100% no-repeat,
+    repeating-linear-gradient(135deg, transparent 0 18px, rgba(246, 219, 153, 0.12) 19px 20px, transparent 21px 40px);
+  content: "";
+  pointer-events: none;
+}
+
+:root[data-appearance="dragon-boat"] .run-button:hover:not(:disabled)::before {
+  background-position: 140% 0, 0 0;
+  transition: background-position 0.65s ease;
+}
+
+:root[data-appearance="dragon-boat"] .assistant-send-button {
+  min-width: 96px;
+  min-height: 42px;
+  border-color: #367c55;
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 50%),
+    linear-gradient(135deg, #327b54, #5fa66b);
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(44, 119, 72, 0.18), inset 0 1px rgba(255, 255, 255, 0.2);
+}
+
+:root[data-appearance="dragon-boat"] .button-icon {
+  background: color-mix(in srgb, var(--field-bg) 76%, var(--accent-soft));
+  color: var(--accent-hover);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-hover) 24%, transparent), 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+:root[data-appearance="dragon-boat"] .btn.primary .button-icon,
+:root[data-appearance="dragon-boat"] .assistant-send-button .button-icon {
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.34), transparent 42%),
+    color-mix(in srgb, var(--festival-gold) 22%, rgba(255, 255, 255, 0.13));
+  color: #fff8dc;
+  box-shadow: inset 0 0 0 1px rgba(255, 245, 206, 0.24);
+}
+
+:root[data-appearance="dragon-boat"] .primary-action-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+}
+
+:root[data-theme="dark"][data-appearance="dragon-boat"] .btn.primary,
+:root[data-theme="dark"][data-appearance="dragon-boat"] .icon-btn.rail-settings,
+:root[data-theme="dark"][data-appearance="dragon-boat"] .run-button {
+  color: #ffffff;
+}
+
+:root[data-appearance="dragon-boat"] .reference-upload-tile {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--festival-gold) 24%, var(--accent-border));
+  border-style: solid;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 28% 18%, color-mix(in srgb, var(--festival-gold) 10%, transparent), transparent 30%),
+    linear-gradient(145deg, color-mix(in srgb, var(--field-bg) 90%, var(--accent-soft)), color-mix(in srgb, var(--surface-subtle) 86%, var(--accent)));
+  color: var(--accent-hover);
+  box-shadow: 0 7px 16px rgba(16, 46, 29, 0.14), inset 0 0 0 1px color-mix(in srgb, var(--field-bg) 72%, transparent);
+}
+
+:root[data-appearance="dragon-boat"] .reference-upload-tile::after {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  left: 10px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--festival-gold) 42%, var(--accent-hover)), transparent);
+  content: "";
+  opacity: 0.66;
+}
+
+:root[data-appearance="dragon-boat"] .reference-upload-tile:hover:not(:disabled),
+:root[data-appearance="dragon-boat"] .reference-upload-tile:focus-visible {
+  border-color: color-mix(in srgb, var(--festival-gold) 34%, var(--accent-border));
+  background:
+    radial-gradient(circle at 28% 18%, color-mix(in srgb, var(--festival-gold) 14%, transparent), transparent 30%),
+    linear-gradient(145deg, color-mix(in srgb, var(--field-bg) 86%, var(--accent-soft)), color-mix(in srgb, var(--surface-subtle) 80%, var(--accent)));
+  box-shadow: 0 9px 18px rgba(16, 46, 29, 0.18), inset 0 0 0 1px color-mix(in srgb, var(--festival-gold) 10%, transparent);
+}
+
+:root[data-appearance="dragon-boat"] .image-card,
+:root[data-appearance="dragon-boat"] .connection-panel,
+:root[data-appearance="dragon-boat"] .qr-card,
+:root[data-appearance="dragon-boat"] .confirm-dialog {
+  border-color: color-mix(in srgb, var(--accent-hover) 18%, var(--border));
+  border-radius: 12px;
+  box-shadow: 0 12px 34px rgba(44, 88, 60, 0.08);
+}
+
+:root[data-appearance="dragon-boat"] .image-card {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, var(--accent-soft)), var(--panel));
+}
+
+:root[data-appearance="dragon-boat"] .image-preview.placeholder,
+:root[data-appearance="dragon-boat"] .empty-state {
+  background:
+    radial-gradient(circle at 50% 48%, color-mix(in srgb, var(--festival-gold) 9%, transparent), transparent 30%),
+    repeating-radial-gradient(ellipse at 50% 110%, transparent 0 20px, color-mix(in srgb, var(--accent-hover) 9%, transparent) 21px 22px, transparent 23px 39px),
+    var(--surface-subtle);
+}
+
+:root[data-appearance="dragon-boat"] .status-badge,
+:root[data-appearance="dragon-boat"] .saved-badge {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 12%, transparent);
+}
+
+:root[data-appearance="dragon-boat"] .settings-popover {
+  border-color: color-mix(in srgb, var(--accent-hover) 25%, var(--border-strong));
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse at 100% 0, color-mix(in srgb, var(--accent-soft) 85%, transparent) 0 18%, transparent 18.5%),
+    var(--panel-strong);
+}
+
+:root[data-appearance="dragon-boat"] .appearance-option.active {
+  border-color: color-mix(in srgb, var(--festival-gold) 55%, var(--accent-hover));
+  background: linear-gradient(135deg, var(--accent-softer), color-mix(in srgb, var(--festival-gold) 9%, var(--field-bg)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--festival-gold) 16%, transparent);
+}
+
+:root[data-appearance="dragon-boat"] ::selection {
+  background: color-mix(in srgb, var(--accent-hover) 32%, transparent);
+}
+
+:root[data-theme="dark"][data-appearance="dragon-boat"] .generate-view {
+  background:
+    radial-gradient(circle at 98% 2%, rgba(104, 195, 147, 0.12), transparent 25%),
+    rgba(16, 34, 25, 0.8);
+}
+
+:root[data-theme="dark"][data-appearance="dragon-boat"] .composer {
+  background:
+    radial-gradient(ellipse at 108% 2%, rgba(104, 195, 147, 0.11) 0 9%, transparent 9.5%),
+    linear-gradient(180deg, rgba(18, 38, 28, 0.9), rgba(13, 30, 22, 0.84));
+}
+
+:root[data-theme="dark"][data-appearance="dragon-boat"] .results-panel {
+  background:
+    linear-gradient(135deg, transparent 0 82%, rgba(104, 195, 147, 0.07) 82% 100%),
+    rgba(14, 33, 24, 0.82);
+}
+
 .spin {
   animation: spin 0.9s linear infinite;
 }
@@ -1572,5 +2139,27 @@ textarea:focus {
 
   .controls-grid {
     grid-template-columns: 1fr;
+  }
+
+  :root[data-appearance="dragon-boat"] .run-button {
+    padding-right: 48px;
+    padding-left: 54px;
+  }
+
+  :root[data-appearance="dragon-boat"] .festival-button-dragon-head,
+  :root[data-appearance="dragon-boat"] .festival-button-dragon-tail {
+    width: 48px;
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

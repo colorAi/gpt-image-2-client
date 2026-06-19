@@ -1,6 +1,6 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { Image as ImageIcon, Languages, LoaderCircle, Paintbrush, Send, Upload, X } from "lucide-react";
+import { Image as ImageIcon, Languages, LoaderCircle, Sparkles, Upload, WandSparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { askPromptAssistant, createEditTask, createGenerationTask, fetchImageTasks, translatePromptText } from "../api";
 import type { ApiClient } from "../api";
@@ -8,6 +8,7 @@ import { aspectOptions, defaultImageModel, maxClientBatchConcurrency, maxClientE
 import type { ConfirmRequest, ImageTask, LocalResultRecord, NativeDroppedFile, NativeLocalImagePage, PendingPromptJob, PromptAssistantMessage, PromptQueueStats, SubmitPromptOptions, TaskRecord, Toast } from "../types";
 import { aspectLabelFromSize, compactTaskForStorage, compressReferenceImage, fileFromDataUrl, fileToDataUrl, getErrorMessage, hasPendingPreviewHydration, isImageFile, isPollableTask, localDateString, localSortKey, mergeTaskUpdate, nativeLocalImageToRecord, shouldApplyTaskUpdate, shouldReleasePromptQueueSlot, splitPromptGroups, withRunningTimer } from "../utils";
 import ConfirmDialog from "./ConfirmDialog";
+import { FestivalButtonDragonHead, FestivalButtonDragonTail } from "./FestivalRail";
 import TaskResultGrid from "./TaskResultGrid";
 
 export default function GenerateView({
@@ -723,8 +724,10 @@ export default function GenerateView({
                 placeholder="让 AI 帮你整理提示词"
               />
               <div className="assistant-actions">
-                <button className="btn" onClick={askAssistant} disabled={isAssistantLoading || isProcessingReferences}>
-                  {isAssistantLoading ? <LoaderCircle size={16} className="spin" /> : <Send size={16} />}
+                <button className="btn assistant-send-button" onClick={askAssistant} disabled={isAssistantLoading || isProcessingReferences}>
+                  <span className="button-icon button-icon-soft">
+                    {isAssistantLoading ? <LoaderCircle size={15} className="spin" /> : <Sparkles size={15} />}
+                  </span>
                   发送
                 </button>
                 <button className="btn" onClick={() => setAssistantMessages([])} disabled={!assistantMessages.length || isAssistantLoading}>清空</button>
@@ -817,8 +820,12 @@ export default function GenerateView({
           </div>
 
           <button className="btn primary run-button" onClick={submit} disabled={isSubmitting || isProcessingReferences}>
-            {isSubmitting ? <LoaderCircle size={18} className="spin" /> : <Paintbrush size={18} />}
+            <FestivalButtonDragonHead />
+            <span className="button-icon primary-action-icon">
+              {isSubmitting ? <LoaderCircle size={17} className="spin" /> : <WandSparkles size={17} />}
+            </span>
             {splitSubmit ? "拆分提交任务" : files.length ? "提交编辑任务" : "提交生成任务"}
+            <FestivalButtonDragonTail />
           </button>
         </div>
 

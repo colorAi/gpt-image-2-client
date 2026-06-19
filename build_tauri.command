@@ -3,12 +3,20 @@ cd "$(dirname "$0")" || exit 1
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/Users/hongtao/.cargo/bin:$PATH"
 
+PROJECT_DIR="$(pwd)"
+REPAIR_SCRIPT="$PROJECT_DIR/scripts/修复应用已损坏.command"
+REPAIR_FILE_NAME="如果提示应用已损坏，请双击修复.command"
+BUILD_TARGET="universal-apple-darwin"
+BUILD_ROOT="src-tauri/target/$BUILD_TARGET/release"
+BUNDLE_ROOT="$BUILD_ROOT/bundle"
+
 echo "=========================================="
 echo "     幻影畅享版 Tauri macOS Build"
 echo "=========================================="
 echo
 echo "Project: phantom-image-client"
-echo "Running: npm run tauri:build:mac -- --no-sign"
+echo "Target: Universal macOS (Apple Silicon + Intel)"
+echo "Running: npm run tauri:build:mac -- --target $BUILD_TARGET --no-sign"
 echo
 
 if [ ! -d "node_modules" ]; then
@@ -25,18 +33,55 @@ if [ ! -d "node_modules" ]; then
   echo
 fi
 
-npm run tauri:build:mac -- --no-sign
+npm run tauri:build:mac -- --target "$BUILD_TARGET" --no-sign
 BUILD_EXIT_CODE=$?
 
 echo
 if [ "$BUILD_EXIT_CODE" -ne 0 ]; then
   echo "macOS build failed with exit code $BUILD_EXIT_CODE."
 else
+  APP_PATH=$(ls -dt "$BUNDLE_ROOT"/macos/*.app 2>/dev/null | head -n 1)
+  DMG_PATH=$(ls -t "$BUNDLE_ROOT"/dmg/*.dmg 2>/dev/null | head -n 1)
+  DMG_BUILDER="$BUNDLE_ROOT/dmg/bundle_dmg.sh"
+  DMG_ICON="$BUNDLE_ROOT/dmg/icon.icns"
+
+  if [ -n "$APP_PATH" ]; then
+    echo "Applying an ad-hoc signature for unsigned distribution..."
+    codesign --force --deep --sign - "$APP_PATH"
+    BUILD_EXIT_CODE=$?
+    if [ "$BUILD_EXIT_CODE" -eq 0 ]; then
+      codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+      BUILD_EXIT_CODE=$?
+    fi
+  fi
+
+  if [ "$BUILD_EXIT_CODE" -eq 0 ] && [ -n "$APP_PATH" ] && [ -n "$DMG_PATH" ] && [ -f "$DMG_BUILDER" ] && [ -f "$REPAIR_SCRIPT" ]; then
+    echo "Adding the macOS repair shortcut to the DMG..."
+    chmod +x "$REPAIR_SCRIPT"
+    rm -f "$DMG_PATH"
+    "$DMG_BUILDER" \
+      --volname "幻影畅享版" \
+      --volicon "$DMG_ICON" \
+      --window-size 680 430 \
+      --icon-size 112 \
+      --icon "$(basename "$APP_PATH")" 170 170 \
+      --app-drop-link 510 170 \
+      --add-file "$REPAIR_FILE_NAME" "$REPAIR_SCRIPT" 340 330 \
+      "$DMG_PATH" \
+      "$(dirname "$APP_PATH")"
+    BUILD_EXIT_CODE=$?
+  elif [ "$BUILD_EXIT_CODE" -eq 0 ]; then
+    echo "Unable to add the repair shortcut: required DMG build files were not found."
+    BUILD_EXIT_CODE=1
+  fi
+
+  echo
+fi
+
+if [ "$BUILD_EXIT_CODE" -eq 0 ]; then
   echo "macOS build completed successfully."
   echo
   echo "Bundles:"
-  APP_PATH=$(ls -dt src-tauri/target/release/bundle/macos/*.app 2>/dev/null | head -n 1)
-  DMG_PATH=$(ls -t src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null | head -n 1)
   if [ -n "$APP_PATH" ]; then
     echo "$APP_PATH"
   fi
@@ -44,11 +89,13 @@ else
     echo "$DMG_PATH"
   fi
   if [ -z "$APP_PATH" ] && [ -z "$DMG_PATH" ]; then
-    echo "src-tauri/target/release/bundle/"
+    echo "$BUNDLE_ROOT/"
   fi
   echo
   echo "Executable:"
-  echo "src-tauri/target/release/phantom_image_client"
+  echo "$BUILD_ROOT/phantom_image_client"
+else
+  echo "macOS packaging did not complete."
 fi
 echo
 read -r -p "Press Enter to close..."

@@ -1,6 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { activeStatuses, aspectOptions, maxReferenceImageEdge, progressTextLabels, promptQueueReleaseProgresses, referenceImageJpegQuality, referenceImageSizeThreshold, taskStatusLabels, terminalStatuses, themeStorageKey } from "./constants";
-import type { ImageTask, LocalResultRecord, NativeLocalImage, TaskRecord, ThemeMode } from "./types";
+import { activeStatuses, appearanceStorageKey, aspectOptions, maxReferenceImageEdge, progressTextLabels, promptQueueReleaseProgresses, referenceImageJpegQuality, referenceImageSizeThreshold, taskStatusLabels, terminalStatuses, themeStorageKey } from "./constants";
+import type { AppearanceMode, ImageTask, LocalResultRecord, NativeLocalImage, TaskRecord, ThemeMode } from "./types";
 
 export function normalizeBaseUrl(value: string) {
   return value.trim().replace(/\/+$/, "");
@@ -265,6 +265,12 @@ export function getInitialTheme(): ThemeMode {
   const savedTheme = window.localStorage.getItem(themeStorageKey);
   if (savedTheme === "light" || savedTheme === "dark") return savedTheme;
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+export function getInitialAppearance(): AppearanceMode {
+  if (typeof window === "undefined") return "dragon-boat";
+  const savedAppearance = window.localStorage.getItem(appearanceStorageKey);
+  return savedAppearance === "default" ? "default" : "dragon-boat";
 }
 
 export function splitPromptGroups(value: string) {

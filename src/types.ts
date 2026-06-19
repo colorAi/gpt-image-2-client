@@ -4,6 +4,7 @@ export type Connection = {
 };
 
 export type ThemeMode = "light" | "dark";
+export type AppearanceMode = "default" | "dragon-boat";
 
 export type ImageTask = {
   id: string;

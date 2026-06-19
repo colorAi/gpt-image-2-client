@@ -1,19 +1,21 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { CheckCircle2, ExternalLink, FolderOpen, KeyRound, LoaderCircle, Moon, Paintbrush, Save, Settings, Sun, X } from "lucide-react";
+import { CheckCircle2, ExternalLink, FolderOpen, KeyRound, Leaf, LoaderCircle, Moon, Paintbrush, Palette, Save, Settings, Sun, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApiClient, fetchImageTasks } from "./api";
+import { FestivalBackdrop, FestivalDragonBoatRail } from "./components/FestivalRail";
 import GenerateView from "./components/GenerateView";
-import { clientDownloadUrl, defaultConnection, fixedBaseUrl, themeStorageKey } from "./constants";
-import type { Connection, Model, ThemeMode, Toast } from "./types";
-import { getErrorMessage, getInitialTheme, isDirectoryAccessError } from "./utils";
+import { appearanceStorageKey, clientDownloadUrl, defaultConnection, fixedBaseUrl, themeStorageKey } from "./constants";
+import type { AppearanceMode, Connection, Model, ThemeMode, Toast } from "./types";
+import { getErrorMessage, getInitialAppearance, getInitialTheme, isDirectoryAccessError } from "./utils";
 
 export default function App() {
   const [connection, setConnection] = useState<Connection>(defaultConnection);
   const [draftConnection, setDraftConnection] = useState<Connection>(connection);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
+  const [appearance, setAppearance] = useState<AppearanceMode>(getInitialAppearance);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [connectionState, setConnectionState] = useState<"idle" | "checking" | "ok" | "error">("idle");
   const [connectionMessage, setConnectionMessage] = useState("");
@@ -109,6 +111,11 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    document.documentElement.dataset.appearance = appearance;
+    window.localStorage.setItem(appearanceStorageKey, appearance);
+  }, [appearance]);
+
+  useEffect(() => {
     let cancelled = false;
     Promise.all([
       invoke<Connection>("load_connection"),
@@ -150,10 +157,14 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      {appearance === "dragon-boat" ? <FestivalBackdrop /> : null}
       <aside className="sidebar">
         <div className="brand rail-brand">
-          <div className="brand-mark"><Paintbrush size={22} /></div>
+          {appearance === "dragon-boat" ? (
+            <div className="brand-mark festival-brand-mark"><Leaf size={22} /></div>
+          ) : <div className="brand-mark"><Paintbrush size={22} /></div>}
           <h1>幻影畅享版</h1>
+          {appearance === "dragon-boat" ? <FestivalDragonBoatRail /> : null}
         </div>
 
         <div className="rail-actions">
@@ -184,6 +195,32 @@ export default function App() {
 
           <div className="settings-content">
             <div className="settings-main">
+              <div className="connection-panel appearance-panel">
+                <div className="panel-title"><Palette size={16} />界面主题</div>
+                <div className="appearance-options" role="radiogroup" aria-label="界面主题">
+                  <button
+                    className={`appearance-option ${appearance === "default" ? "active" : ""}`}
+                    type="button"
+                    role="radio"
+                    aria-checked={appearance === "default"}
+                    onClick={() => setAppearance("default")}
+                  >
+                    <span className="appearance-preview default-preview"><Paintbrush size={18} /></span>
+                    <span><strong>默认</strong><small>经典简洁界面</small></span>
+                  </button>
+                  <button
+                    className={`appearance-option ${appearance === "dragon-boat" ? "active" : ""}`}
+                    type="button"
+                    role="radio"
+                    aria-checked={appearance === "dragon-boat"}
+                    onClick={() => setAppearance("dragon-boat")}
+                  >
+                    <span className="appearance-preview festival-preview"><Leaf size={18} /></span>
+                    <span><strong>端午</strong><small>龙舟与粽叶主题</small></span>
+                  </button>
+                </div>
+              </div>
+
               <div className="connection-panel">
                 <div className="panel-title"><Settings size={16} />连接</div>
                 <label>
