@@ -10,6 +10,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use tauri::{Manager, Runtime};
+use tauri_plugin_fs::FsExt;
 use tokio::{fs as async_fs, io::AsyncWriteExt};
 use walkdir::WalkDir;
 
@@ -286,7 +287,8 @@ fn ensure_thumbnail_file(path: &Path, bytes: &[u8]) -> Option<PathBuf> {
 }
 
 fn is_thumbnail_artifact(path: &Path) -> bool {
-    path.components().any(|component| component.as_os_str() == ".thumbnails")
+    path.components()
+        .any(|component| component.as_os_str() == ".thumbnails")
 }
 
 fn read_be_u32(bytes: &[u8], start: usize) -> Option<u32> {
@@ -331,9 +333,27 @@ fn image_dimensions_from_bytes(bytes: &[u8]) -> (Option<u32>, Option<u32>) {
             if length < 2 || offset + length > bytes.len() {
                 break;
             }
-            if matches!(marker, 0xc0 | 0xc1 | 0xc2 | 0xc3 | 0xc5 | 0xc6 | 0xc7 | 0xc9 | 0xca | 0xcb | 0xcd | 0xce | 0xcf) {
-                let height = bytes.get(offset + 3..offset + 5).map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]) as u32);
-                let width = bytes.get(offset + 5..offset + 7).map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]) as u32);
+            if matches!(
+                marker,
+                0xc0 | 0xc1
+                    | 0xc2
+                    | 0xc3
+                    | 0xc5
+                    | 0xc6
+                    | 0xc7
+                    | 0xc9
+                    | 0xca
+                    | 0xcb
+                    | 0xcd
+                    | 0xce
+                    | 0xcf
+            ) {
+                let height = bytes
+                    .get(offset + 3..offset + 5)
+                    .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]) as u32);
+                let width = bytes
+                    .get(offset + 5..offset + 7)
+                    .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]) as u32);
                 return (width, height);
             }
             offset += length;
@@ -342,7 +362,10 @@ fn image_dimensions_from_bytes(bytes: &[u8]) -> (Option<u32>, Option<u32>) {
 
     if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP".as_slice()) {
         if bytes.get(12..16) == Some(b"VP8X".as_slice()) {
-            return (read_le_u24_plus_one(bytes, 24), read_le_u24_plus_one(bytes, 27));
+            return (
+                read_le_u24_plus_one(bytes, 24),
+                read_le_u24_plus_one(bytes, 27),
+            );
         }
         if bytes.get(12..16) == Some(b"VP8L".as_slice()) {
             if let Some(chunk) = bytes.get(21..25) {
@@ -393,7 +416,10 @@ fn compare_local_image_order(
     left_created_at: &str,
     right_created_at: &str,
 ) -> Ordering {
-    match (local_sort_parts(left_sort_key), local_sort_parts(right_sort_key)) {
+    match (
+        local_sort_parts(left_sort_key),
+        local_sort_parts(right_sort_key),
+    ) {
         (Some((left_batch, left_index)), Some((right_batch, right_index))) => right_batch
             .cmp(&left_batch)
             .then_with(|| right_index.cmp(&left_index)),
@@ -410,7 +436,8 @@ fn local_result_dates(root: &Path) -> Result<Vec<String>, String> {
         return Ok(vec![]);
     }
     let mut dates = Vec::new();
-    for entry in fs::read_dir(root).map_err(|error| format!("读取本地结果目录失败：{error}"))? {
+    for entry in fs::read_dir(root).map_err(|error| format!("读取本地结果目录失败：{error}"))?
+    {
         let entry = entry.map_err(|error| format!("读取本地结果目录失败：{error}"))?;
         let path = entry.path();
         if !path.is_dir() {
@@ -558,39 +585,21 @@ fn save_settings<R: Runtime>(app: tauri::AppHandle<R>, value: AppSettings) -> Re
 }
 
 #[tauri::command]
-fn host_platform() -> &'static str {
-    #[cfg(target_os = "macos")]
-    {
-        "macos"
-    }
-    #[cfg(target_os = "windows")]
-    {
-        "windows"
-    }
-    #[cfg(target_os = "linux")]
-    {
-        "linux"
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    {
-        "unknown"
-    }
-}
-
-#[tauri::command]
-fn check_result_dir_access(result_dir: String) -> Result<(), String> {
-    if result_dir.trim().is_empty() {
-        return Err("请先选择本地结果目录".to_string());
+fn remember_result_dir_scope<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    result_dir: String,
+) -> Result<(), String> {
+    let result_dir = result_dir.trim();
+    if result_dir.is_empty() {
+        return Ok(());
     }
     let root = PathBuf::from(result_dir);
     if !root.exists() {
         return Err("本地结果目录不存在".to_string());
     }
-    fs::read_dir(&root).map_err(|error| format!("读取本地结果目录失败：{error}"))?;
-    let probe = root.join(".phantom_image_client_access_check.tmp");
-    fs::write(&probe, b"ok").map_err(|error| format!("写入本地结果目录失败：{error}"))?;
-    let _ = fs::remove_file(&probe);
-    Ok(())
+    app.fs_scope()
+        .allow_directory(&root, true)
+        .map_err(|error| format!("记录本地结果目录授权失败：{error}"))
 }
 
 #[tauri::command]
@@ -864,7 +873,13 @@ fn scan_local_images(
         let local_sort_key = image_metadata_from_path(path)
             .and_then(|metadata| metadata.local_sort_key)
             .unwrap_or_else(|| created_at.clone());
-        image_paths.push((path.to_path_buf(), metadata.len(), created_at, modified, local_sort_key));
+        image_paths.push((
+            path.to_path_buf(),
+            metadata.len(),
+            created_at,
+            modified,
+            local_sort_key,
+        ));
     }
     image_paths.sort_by(|left, right| {
         compare_local_image_order(&left.4, &right.4, &left.2, &right.2)
@@ -879,10 +894,8 @@ fn scan_local_images(
     let effective_page = current_page.min(total_pages);
     let offset = (effective_page - 1).saturating_mul(current_page_size);
     let mut items = Vec::new();
-    for (path, size, created_at, modified, _) in image_paths
-        .into_iter()
-        .skip(offset)
-        .take(current_page_size)
+    for (path, size, created_at, modified, _) in
+        image_paths.into_iter().skip(offset).take(current_page_size)
     {
         let local_created_at = modified
             .map(|time| {
@@ -972,6 +985,8 @@ fn delete_local_images(result_dir: String, paths: Vec<String>) -> Result<usize, 
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_persisted_scope::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -979,8 +994,7 @@ pub fn run() {
             save_connection,
             load_settings,
             save_settings,
-            host_platform,
-            check_result_dir_access,
+            remember_result_dir_scope,
             read_dropped_images,
             load_tasks,
             save_tasks,

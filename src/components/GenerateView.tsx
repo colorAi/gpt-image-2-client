@@ -6,7 +6,7 @@ import { askPromptAssistant, createEditTask, createGenerationTask, fetchImageTas
 import type { ApiClient } from "../api";
 import { aspectOptions, defaultImageModel, maxClientBatchConcurrency, maxClientEditConcurrency, maxPreviewHydrateAttempts, qualityOptions } from "../constants";
 import type { ConfirmRequest, ImageTask, LocalResultRecord, NativeDroppedFile, NativeLocalImagePage, PendingPromptJob, PromptAssistantMessage, PromptQueueStats, SubmitPromptOptions, TaskRecord, Toast } from "../types";
-import { aspectLabelFromSize, compactTaskForStorage, compressReferenceImage, fileFromDataUrl, fileToDataUrl, getErrorMessage, hasPendingPreviewHydration, isImageFile, isPollableTask, localDateString, localSortKey, mergeTaskUpdate, nativeLocalImageToRecord, shouldApplyTaskUpdate, shouldReleasePromptQueueSlot, splitPromptGroups, withRunningTimer } from "../utils";
+import { aspectLabelFromSize, compactTaskForStorage, compressReferenceImage, fileFromDataUrl, fileToDataUrl, getErrorMessage, hasPendingPreviewHydration, isImageFile, isPollableTask, localDateString, localSortKey, mergeTaskUpdate, nativeLocalImageToRecord, shouldApplyTaskUpdate, shouldReleasePromptQueueSlot, splitPromptGroups, withRunningTimer, withTaskTimeout } from "../utils";
 import ConfirmDialog from "./ConfirmDialog";
 import { FestivalButtonDragonHead, FestivalButtonDragonTail } from "./FestivalRail";
 import TaskResultGrid from "./TaskResultGrid";
@@ -90,6 +90,33 @@ export default function GenerateView({
     promptQueueReleaseWaiters.current.delete(task.id);
     release();
   }, []);
+
+  useEffect(() => {
+    const closeTimedOutTasks = () => {
+      const now = Date.now();
+      const timedOutTasks = tasks
+        .map((task) => withTaskTimeout(task, now))
+        .filter((task, index) => task !== tasks[index]);
+      if (!timedOutTasks.length) return;
+
+      timedOutTasks.forEach(releasePromptQueueWaiter);
+      setTasks((current) => {
+        let changed = false;
+        const next = current.map((task) => {
+          const updated = withTaskTimeout(task, now);
+          if (updated === task) return task;
+          changed = true;
+          return updated;
+        });
+        return changed ? next : current;
+      });
+    };
+
+    closeTimedOutTasks();
+    if (!tasks.some((task) => task.status === "running")) return;
+    const timer = window.setInterval(closeTimedOutTasks, 5000);
+    return () => window.clearInterval(timer);
+  }, [releasePromptQueueWaiter, tasks]);
 
   const schedulePreviewHydrateRetry = useCallback((taskId: string, attempt: number) => {
     if (previewHydrateRetryTimers.current.has(taskId)) return;

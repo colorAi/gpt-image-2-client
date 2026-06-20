@@ -1,6 +1,6 @@
 {
   "name": "phantom-image-client",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,6 +19,7 @@
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/cli": "^2.11.2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-opener": "^2.5.4",
     "@vitejs/plugin-react": "^6.0.2",
     "lucide-react": "^0.468.0",

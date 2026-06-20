@@ -1,6 +1,6 @@
 [package]
 name = "phantom_image_client"
-version = "1.1.5"
+version = "1.1.6"
 description = "幻影畅享版"
 authors = ["幻影畅享版"]
 edition = "2021"
@@ -22,7 +22,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-persisted-scope = "2"
 tokio = { version = "1", features = ["fs", "io-util", "rt-multi-thread"] }
 urlencoding = "2"
 walkdir = "2"

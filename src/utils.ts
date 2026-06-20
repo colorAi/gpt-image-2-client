@@ -1,5 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { activeStatuses, appearanceStorageKey, aspectOptions, maxReferenceImageEdge, progressTextLabels, promptQueueReleaseProgresses, referenceImageJpegQuality, referenceImageSizeThreshold, taskStatusLabels, terminalStatuses, themeStorageKey } from "./constants";
+import { activeStatuses, appearanceStorageKey, aspectOptions, maxReferenceImageEdge, maxRunningTaskSeconds, progressTextLabels, promptQueueReleaseProgresses, referenceImageJpegQuality, referenceImageSizeThreshold, taskStatusLabels, terminalStatuses, themeStorageKey } from "./constants";
 import type { AppearanceMode, ImageTask, LocalResultRecord, NativeLocalImage, TaskRecord, ThemeMode } from "./types";
 
 export function normalizeBaseUrl(value: string) {
@@ -129,20 +129,40 @@ export function taskElapsedSeconds(task: TaskRecord, now = Date.now()) {
   return Math.max(0, Math.floor(base + (now - task.runningStartedAt) / 1000));
 }
 
+export function isRunningTaskTimedOut(task: TaskRecord, now = Date.now()) {
+  return task.status === "running" && taskElapsedSeconds(task, now) >= maxRunningTaskSeconds;
+}
+
+export function withTaskTimeout(task: TaskRecord, now = Date.now()) {
+  if (!isRunningTaskTimedOut(task, now)) return task;
+  const elapsed = taskElapsedSeconds(task, now);
+  return {
+    ...task,
+    status: "error",
+    error: `超过 ${Math.floor(maxRunningTaskSeconds / 60)} 分钟仍未完成，已自动判定任务中断，可重新提交。`,
+    progress: "failed",
+    elapsed_secs: elapsed,
+    updated_at: new Date(now).toISOString(),
+    runningStartedAt: undefined,
+    runningElapsedBase: undefined,
+  } satisfies TaskRecord;
+}
+
 export function withRunningTimer(task: TaskRecord, now = Date.now()) {
   const normalized = normalizeImageTask(task) as TaskRecord;
-  if (normalized.status !== "running") {
+  const timed = withTaskTimeout(normalized, now);
+  if (timed.status !== "running") {
     return {
-      ...normalized,
+      ...timed,
       runningStartedAt: undefined,
       runningElapsedBase: undefined,
     };
   }
-  if (normalized.runningStartedAt) return normalized;
+  if (timed.runningStartedAt) return timed;
   return {
-    ...normalized,
+    ...timed,
     runningStartedAt: now,
-    runningElapsedBase: Math.max(0, normalized.elapsed_secs || 0),
+    runningElapsedBase: Math.max(0, timed.elapsed_secs || 0),
   };
 }
 
@@ -158,11 +178,11 @@ export function mergeTaskUpdate(current: TaskRecord, next: ImageTask, now = Date
     };
   }
   if (current.status === "running" && current.runningStartedAt) {
-    return {
+    return withTaskTimeout({
       ...merged,
       runningStartedAt: current.runningStartedAt,
       runningElapsedBase: current.runningElapsedBase ?? current.elapsed_secs ?? 0,
-    };
+    }, now);
   }
   return withRunningTimer(merged, now);
 }
@@ -191,15 +211,6 @@ export function getErrorMessage(error: unknown) {
 export function shouldFallbackToSyncEdit(error: unknown) {
   const message = getErrorMessage(error).trim().toLowerCase();
   return message === "internal server error" || message.includes("内部服务错误");
-}
-
-export function isDirectoryAccessError(error: unknown) {
-  const message = getErrorMessage(error).toLowerCase();
-  return message.includes("permission")
-    || message.includes("denied")
-    || message.includes("operation not permitted")
-    || message.includes("访问")
-    || message.includes("权限");
 }
 
 export function nativeLocalImageToRecord(item: NativeLocalImage): LocalResultRecord {

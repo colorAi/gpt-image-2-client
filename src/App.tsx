@@ -2,13 +2,13 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { CheckCircle2, ExternalLink, FolderOpen, KeyRound, Leaf, LoaderCircle, Moon, Paintbrush, Palette, Save, Settings, Sun, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createApiClient, fetchImageTasks } from "./api";
 import { FestivalBackdrop, FestivalRailSeal } from "./components/FestivalRail";
 import GenerateView from "./components/GenerateView";
 import { appearanceStorageKey, clientDownloadUrl, defaultConnection, fixedBaseUrl, themeStorageKey } from "./constants";
 import type { AppearanceMode, Connection, Model, ThemeMode, Toast } from "./types";
-import { getErrorMessage, getInitialAppearance, getInitialTheme, isDirectoryAccessError } from "./utils";
+import { getErrorMessage, getInitialAppearance, getInitialTheme } from "./utils";
 
 export default function App() {
   const [connection, setConnection] = useState<Connection>(defaultConnection);
@@ -22,7 +22,6 @@ export default function App() {
   const [resultDir, setResultDir] = useState("");
   const [activeResultDir, setActiveResultDir] = useState("");
   const [directoryMessage, setDirectoryMessage] = useState("");
-  const startupDirectoryPrompted = useRef(false);
 
   const api = useMemo(() => createApiClient(draftConnection), [draftConnection]);
 
@@ -42,9 +41,12 @@ export default function App() {
 
   const chooseDirectory = async () => {
     try {
-      const selected = await open({ directory: true, multiple: false, title: "选择本地结果目录" });
+      const selected = await open({ directory: true, multiple: false, recursive: true, title: "选择本地结果目录" });
       if (!selected || Array.isArray(selected)) return;
       await invoke("save_settings", { value: { resultDir: selected } });
+      if (isTauri()) {
+        await invoke("remember_result_dir_scope", { resultDir: selected });
+      }
       setResultDir(selected);
       setActiveResultDir(selected);
       setDirectoryMessage(`已选择：${selected}`);
@@ -123,36 +125,18 @@ export default function App() {
     Promise.all([
       invoke<Connection>("load_connection"),
       invoke<{ resultDir?: string | null }>("load_settings"),
-      isTauri() ? invoke<string>("host_platform") : Promise.resolve("browser"),
-    ]).then(([savedConnection, settings, platform]) => {
+    ]).then(([savedConnection, settings]) => {
       if (cancelled) return;
       const nextConnection = { baseUrl: fixedBaseUrl, apiKey: (savedConnection?.apiKey || "").trim() };
       setConnection(nextConnection);
       setDraftConnection(nextConnection);
       const savedDir = settings.resultDir || "";
+      if (savedDir && isTauri()) {
+        void invoke("remember_result_dir_scope", { resultDir: savedDir }).catch(() => undefined);
+      }
       setResultDir(savedDir);
-      setActiveResultDir("");
+      setActiveResultDir(savedDir);
       setDirectoryMessage(savedDir ? `已记住：${savedDir}` : "");
-      if (platform !== "macos") {
-        setActiveResultDir(savedDir);
-        return;
-      }
-      if (startupDirectoryPrompted.current) return;
-      if (!savedDir) {
-        startupDirectoryPrompted.current = true;
-        setSettingsOpen(true);
-        window.setTimeout(() => void chooseDirectory(), 400);
-        return;
-      }
-      void invoke("check_result_dir_access", { resultDir: savedDir }).then(() => {
-        if (!cancelled) setActiveResultDir(savedDir);
-      }).catch((error) => {
-        if (cancelled || !isDirectoryAccessError(error) || startupDirectoryPrompted.current) return;
-        startupDirectoryPrompted.current = true;
-        setSettingsOpen(true);
-        setDirectoryMessage("macOS 需要重新选择本地结果目录以授予读写权限");
-        window.setTimeout(() => void chooseDirectory(), 400);
-      });
     }).catch(() => {
       if (!cancelled) {
         setConnection(defaultConnection);
