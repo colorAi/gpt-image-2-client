@@ -1,4 +1,4 @@
-# 幻影畅享版独立客户端
+# 幻影G2生图独立客户端
 
 ## 同步版本号
 
@@ -20,7 +20,12 @@ npm install
 npm run tauri:dev
 ```
 
-客户端固定连接 `https://1kgpt.hootoo.dpdns.org`，启动后在配置中心填写：
+客户端可在配置中心切换两个 API 渠道：
+
+- 畅享版：`https://1kgpt.hootoo.dpdns.org`
+- 稳定版：`https://api.hootoo.dpdns.org`
+
+启动后在配置中心填写：
 
 - API Key：主项目中可用的 admin/user key
 - 本地结果目录：可选。选择后，生成成功的图片会按日期落盘保存。
@@ -29,6 +34,7 @@ npm run tauri:dev
 
 - 文生图：调用 `/api/image-tasks/generations` 提交后台任务
 - 图生图/编辑：通过点击或拖拽上传参考图，调用 `/api/image-tasks/edits`
+- 稳定版：调用 `/v1/images/async/generations` 或 `/v1/images/async/edits`，并支持 1K / 2K / 4K 分辨率
 - 任务轮询：任务提交后进入列表，生成中可继续并发提交
 - 本地结果：可扫描、预览和删除已保存到结果目录中的图片
 - 提示词助手：调用 `/v1/chat/completions` 整理提示词

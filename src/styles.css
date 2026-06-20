@@ -276,7 +276,7 @@ button:disabled {
 }
 
 .festival-rail-tag.festival-rail-seal {
-  top: 204px;
+  top: 276px;
 }
 
 .festival-rail-scene {
@@ -372,9 +372,28 @@ button:disabled {
 }
 
 .rail-settings,
-.rail-theme {
+.rail-theme,
+.rail-channel {
   width: 44px;
   height: 44px;
+}
+
+.rail-channel {
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1;
+}
+
+.rail-channel-main {
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+}
+
+.rail-channel-sub {
+  font-size: 10px;
+  font-weight: 800;
+  opacity: 0.72;
 }
 
 .settings-popover {
@@ -507,6 +526,52 @@ button:disabled {
   margin-bottom: 12px;
   color: var(--text-strong);
   text-transform: uppercase;
+}
+
+.connection-panel-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.connection-panel-header .panel-title {
+  margin-bottom: 0;
+}
+
+.channel-switch {
+  display: inline-flex;
+  overflow: hidden;
+  flex: 0 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface-muted);
+  padding: 2px;
+}
+
+.channel-switch button {
+  min-width: 54px;
+  height: 27px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.channel-switch button:hover,
+.channel-switch button:focus-visible {
+  color: var(--text-strong);
+  outline: none;
+}
+
+.channel-switch button.active {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.14);
 }
 
 .connection-panel label {
@@ -662,7 +727,8 @@ textarea:focus {
 }
 
 .icon-btn.rail-settings,
-.icon-btn.rail-theme {
+.icon-btn.rail-theme,
+.icon-btn.rail-channel {
   width: 44px;
   height: 44px;
 }
@@ -677,6 +743,22 @@ textarea:focus {
   border-color: var(--border-strong);
   background: var(--field-bg);
   color: var(--accent);
+}
+
+.icon-btn.rail-channel {
+  border-color: var(--accent-border);
+  background: var(--accent-softer);
+  color: var(--accent);
+}
+
+.icon-btn.rail-channel.stable {
+  border-color: color-mix(in srgb, #60a5fa 42%, var(--accent-border));
+  background: color-mix(in srgb, #60a5fa 13%, var(--field-bg));
+  color: color-mix(in srgb, #2563eb 78%, var(--accent));
+}
+
+:root[data-theme="dark"] .icon-btn.rail-channel.stable {
+  color: #93c5fd;
 }
 
 .connection-status {
@@ -1120,6 +1202,7 @@ textarea:focus {
 
 .column-control {
   display: inline-flex;
+  align-items: center;
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: 8px;
@@ -1139,6 +1222,71 @@ textarea:focus {
 .column-control button svg {
   display: block;
   margin: 0 auto;
+}
+
+.column-count {
+  display: inline-grid;
+  min-width: 34px;
+  height: 34px;
+  place-items: center;
+  border-right: 1px solid var(--border-subtle);
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.column-slider {
+  width: 112px;
+  height: 34px;
+  min-width: 76px;
+  border: 0;
+  border-right: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  padding: 0 10px;
+  box-shadow: none;
+  accent-color: var(--accent);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.column-slider:focus {
+  border-color: transparent;
+  box-shadow: inset 0 0 0 2px var(--accent-ring);
+}
+
+.column-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 22%, var(--border-strong));
+}
+
+.column-slider::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 2px solid var(--field-bg);
+  border-radius: 999px;
+  background: var(--accent);
+  -webkit-appearance: none;
+  appearance: none;
+  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.18);
+}
+
+.column-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 22%, var(--border-strong));
+}
+
+.column-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--field-bg);
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.18);
 }
 
 .column-control button:last-child {
@@ -1379,17 +1527,15 @@ textarea:focus {
 }
 
 .image-preview.privacy-masked {
-  background:
-    linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(54, 65, 72, 0.88)),
-    var(--image-bg);
-  color: var(--on-dark);
+  background: color-mix(in srgb, var(--surface-muted) 92%, var(--panel));
+  color: var(--text-strong);
 }
 
 .privacy-mask {
   display: grid;
   place-items: center;
   gap: 8px;
-  color: rgba(255, 255, 255, 0.88);
+  color: inherit;
 }
 
 .privacy-mask span {
@@ -1770,11 +1916,25 @@ textarea:focus {
 
 :root[data-appearance="dragon-boat"] .icon-btn.rail-theme {
   border-color: color-mix(in srgb, var(--festival-gold) 36%, var(--accent-border));
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.44), transparent 62%),
-    color-mix(in srgb, var(--field-bg) 86%, var(--accent-soft));
+  background: color-mix(in srgb, var(--field-bg) 86%, var(--accent-soft));
   color: var(--accent);
-  box-shadow: 0 7px 16px rgba(43, 86, 58, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+  box-shadow: 0 7px 16px rgba(43, 86, 58, 0.08);
+}
+
+:root[data-appearance="dragon-boat"] .icon-btn.rail-channel {
+  border-color: color-mix(in srgb, var(--festival-gold) 34%, var(--accent-border));
+  background: color-mix(in srgb, var(--accent-soft) 76%, var(--field-bg));
+  color: var(--accent);
+  box-shadow: 0 7px 16px rgba(43, 86, 58, 0.08);
+}
+
+:root[data-appearance="dragon-boat"] .icon-btn.rail-channel.stable {
+  border-color: color-mix(in srgb, #60a5fa 34%, var(--festival-gold));
+  color: color-mix(in srgb, #2563eb 70%, var(--accent));
+}
+
+:root[data-theme="dark"][data-appearance="dragon-boat"] .icon-btn.rail-channel.stable {
+  color: #93c5fd;
 }
 
 :root[data-appearance="dragon-boat"] .generate-view {
@@ -1838,6 +1998,13 @@ textarea:focus {
 :root[data-appearance="dragon-boat"] textarea {
   border-color: color-mix(in srgb, var(--accent-hover) 19%, var(--border-strong));
   background: color-mix(in srgb, var(--field-bg) 94%, var(--accent-soft));
+}
+
+:root[data-appearance="dragon-boat"] .column-slider {
+  border: 0;
+  border-right: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
 }
 
 :root[data-appearance="dragon-boat"] .btn:hover:not(:disabled),
@@ -2101,6 +2268,7 @@ textarea:focus {
   }
 
   .brand-mark,
+  .icon-btn.rail-channel,
   .icon-btn.rail-theme,
   .icon-btn.rail-settings {
     width: 40px;

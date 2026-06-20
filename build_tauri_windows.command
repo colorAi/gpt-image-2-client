@@ -2,11 +2,11 @@
 cd "$(dirname "$0")" || exit 1
 
 export PATH="/opt/homebrew/opt/llvm/bin:/opt/homebrew/bin:/Users/hongtao/.cargo/bin:$PATH"
-APP_NAME="幻影畅享版"
+APP_NAME="幻影G2生图"
 APP_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version)")
 
 echo "=========================================="
-echo "     幻影畅享版 Tauri Windows x64 Build"
+echo "     幻影G2生图 Tauri Windows x64 Build"
 echo "=========================================="
 echo
 echo "Project: phantom-image-client"

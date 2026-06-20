@@ -6,9 +6,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createApiClient, fetchImageTasks } from "./api";
 import { FestivalBackdrop, FestivalRailSeal } from "./components/FestivalRail";
 import GenerateView from "./components/GenerateView";
-import { appearanceStorageKey, clientDownloadUrl, defaultConnection, fixedBaseUrl, themeStorageKey } from "./constants";
-import type { AppearanceMode, Connection, Model, ThemeMode, Toast } from "./types";
-import { getErrorMessage, getInitialAppearance, getInitialTheme } from "./utils";
+import { apiChannelOptions, appearanceStorageKey, clientDownloadUrl, connectionForChannel, connectionWithApiKey, defaultConnection, normalizeApiKeys, stableBaseUrl, themeStorageKey } from "./constants";
+import type { ApiChannel, AppearanceMode, Connection, Model, ThemeMode, Toast } from "./types";
+import { getErrorMessage, getInitialAppearance, getInitialTheme, normalizeBaseUrl } from "./utils";
+
+function getChannelLabel(channel: ApiChannel) {
+  return channel === "stable" ? "稳定版" : "畅享版";
+}
+
+function getChannelShortLabel(channel: ApiChannel) {
+  return channel === "stable" ? "稳定" : "畅享";
+}
 
 export default function App() {
   const [connection, setConnection] = useState<Connection>(defaultConnection);
@@ -32,11 +40,28 @@ export default function App() {
   }, []);
 
   const saveConnection = () => {
-    const next = { baseUrl: fixedBaseUrl, apiKey: draftConnection.apiKey.trim() };
+    const next = connectionForChannel(draftConnection.channel, draftConnection.apiKeys);
     setConnection(next);
     setDraftConnection(next);
     void invoke("save_connection", { value: next }).catch((error) => notify(getErrorMessage(error), "error"));
-    notify("API Key 已保存", "success");
+    notify("API 渠道与 Key 已保存", "success");
+  };
+
+  const selectChannel = (channel: ApiChannel) => {
+    setDraftConnection(connectionForChannel(channel, draftConnection.apiKeys));
+    setConnectionState("idle");
+    setConnectionMessage("");
+  };
+
+  const quickSwitchChannel = () => {
+    const nextChannel: ApiChannel = draftConnection.channel === "stable" ? "dream" : "stable";
+    const next = connectionForChannel(nextChannel, draftConnection.apiKeys);
+    setConnection(next);
+    setDraftConnection(next);
+    setConnectionState("idle");
+    setConnectionMessage("");
+    void invoke("save_connection", { value: next }).catch((error) => notify(getErrorMessage(error), "error"));
+    notify(`已切换到${getChannelLabel(nextChannel)}`, "success");
   };
 
   const chooseDirectory = async () => {
@@ -81,11 +106,15 @@ export default function App() {
     setConnectionState("checking");
     setConnectionMessage("");
     try {
-      await api.request("/auth/login", { method: "POST", body: {} });
+      if (api.connection.channel === "dream") {
+        await api.request("/auth/login", { method: "POST", body: {} });
+      }
       await refreshModels();
-      await fetchImageTasks(api, []);
+      if (api.connection.channel === "dream") {
+        await fetchImageTasks(api, []);
+      }
       setConnectionState("ok");
-      setConnectionMessage("连接成功，任务与结果接口可用");
+      setConnectionMessage(`${getChannelLabel(api.connection.channel)}连接成功`);
       notify("连接成功", "success");
     } catch (error) {
       setConnectionState("error");
@@ -127,13 +156,15 @@ export default function App() {
       invoke<{ resultDir?: string | null }>("load_settings"),
     ]).then(([savedConnection, settings]) => {
       if (cancelled) return;
-      const nextConnection = { baseUrl: fixedBaseUrl, apiKey: (savedConnection?.apiKey || "").trim() };
+      const savedChannel: ApiChannel = savedConnection?.channel === "stable"
+        || normalizeBaseUrl(savedConnection?.baseUrl || "") === normalizeBaseUrl(stableBaseUrl)
+        ? "stable"
+        : "dream";
+      const apiKeys = normalizeApiKeys(savedConnection?.apiKeys, savedChannel, savedConnection?.apiKey || "");
+      const nextConnection = connectionForChannel(savedChannel, apiKeys);
       setConnection(nextConnection);
       setDraftConnection(nextConnection);
       const savedDir = settings.resultDir || "";
-      if (savedDir && isTauri()) {
-        void invoke("remember_result_dir_scope", { resultDir: savedDir }).catch(() => undefined);
-      }
       setResultDir(savedDir);
       setActiveResultDir(savedDir);
       setDirectoryMessage(savedDir ? `已记住：${savedDir}` : "");
@@ -150,6 +181,10 @@ export default function App() {
     };
   }, []);
 
+  const nextQuickChannel: ApiChannel = draftConnection.channel === "stable" ? "dream" : "stable";
+  const currentChannelLabel = getChannelLabel(draftConnection.channel);
+  const nextChannelLabel = getChannelLabel(nextQuickChannel);
+
   return (
     <div className="app-shell">
       {appearance === "dragon-boat" ? <FestivalBackdrop /> : null}
@@ -158,11 +193,20 @@ export default function App() {
           {appearance === "dragon-boat" ? (
             <div className="brand-mark festival-brand-mark"><Leaf size={22} /></div>
           ) : <div className="brand-mark"><Paintbrush size={22} /></div>}
-          <h1>幻影畅享版</h1>
+          <h1>幻影G2生图</h1>
           {appearance === "dragon-boat" ? <FestivalRailSeal /> : null}
         </div>
 
         <div className="rail-actions">
+          <button
+            className={`icon-btn rail-channel ${draftConnection.channel}`}
+            onClick={quickSwitchChannel}
+            title={`当前${currentChannelLabel}，点击切换到${nextChannelLabel}`}
+            aria-label={`当前${currentChannelLabel}，点击切换到${nextChannelLabel}`}
+          >
+            <span className="rail-channel-main">{getChannelShortLabel(draftConnection.channel)}</span>
+            <span className="rail-channel-sub">渠道</span>
+          </button>
           <button
             className="icon-btn rail-theme"
             onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
@@ -217,10 +261,27 @@ export default function App() {
               </div>
 
               <div className="connection-panel">
-                <div className="panel-title"><Settings size={16} />连接</div>
+                <div className="connection-panel-header">
+                  <div className="panel-title"><Settings size={16} />连接</div>
+                  <div className="channel-switch" role="radiogroup" aria-label="API 渠道">
+                    {apiChannelOptions.map((channel) => (
+                      <button
+                        className={draftConnection.channel === channel.value ? "active" : ""}
+                        type="button"
+                        role="radio"
+                        aria-checked={draftConnection.channel === channel.value}
+                        onClick={() => selectChannel(channel.value)}
+                        title={channel.description}
+                        key={channel.value}
+                      >
+                        {channel.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <label>
                   <span><KeyRound size={14} />API Key</span>
-                  <input value={draftConnection.apiKey} onChange={(event) => setDraftConnection((current) => ({ ...current, apiKey: event.target.value }))} placeholder="Bearer key" type="password" />
+                  <input value={draftConnection.apiKey} onChange={(event) => setDraftConnection((current) => connectionWithApiKey(current, event.target.value))} placeholder={`${currentChannelLabel} Bearer key`} type="password" />
                 </label>
                 <div className="button-row">
                   <button className="btn primary" onClick={saveConnection}><Save size={16} />保存</button>

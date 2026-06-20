@@ -1,9 +1,24 @@
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Eye, EyeOff, FilePenLine, FolderOpen, Image as ImageIcon, ImagePlus, LoaderCircle, Paintbrush, RotateCcw, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Eye, EyeOff, FilePenLine, FolderOpen, Image as ImageIcon, ImagePlus, LoaderCircle, Minus, Paintbrush, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 import { localResultPageSizeOptions } from "../constants";
 import type { LocalResultRecord, PreviewItem, PromptQueueStats, TaskRecord, Toast } from "../types";
 import { compactLocalResultTitle, formatElapsedTime, formatResolution, formatSize, getErrorMessage, hasPendingPreviewHydration, isActiveTask, localDataUrlFromImageItem, localDateString, progressText, taskElapsedSeconds, taskStatusLabel } from "../utils";
+
+const minGridColumns = 3;
+const maxGridColumns = 10;
+const defaultGridColumns = 5;
+const gridColumnsStorageKey = "phantom-image-grid-columns";
+
+function clampGridColumns(value: number) {
+  return Math.min(maxGridColumns, Math.max(minGridColumns, Math.round(value)));
+}
+
+function getInitialGridColumns() {
+  if (typeof window === "undefined") return defaultGridColumns;
+  const saved = Number(window.localStorage.getItem(gridColumnsStorageKey));
+  return Number.isFinite(saved) && saved > 0 ? clampGridColumns(saved) : defaultGridColumns;
+}
 
 export default function TaskResultGrid({
   tasks,
@@ -52,7 +67,7 @@ export default function TaskResultGrid({
 }) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
-  const [columns, setColumns] = useState(5);
+  const [columns, setColumns] = useState(getInitialGridColumns);
   const [isPrivacyMode, setIsPrivacyMode] = useState(false);
   const [privateItemIds, setPrivateItemIds] = useState<string[]>([]);
   const [clockNow, setClockNow] = useState(Date.now());
@@ -112,6 +127,14 @@ export default function TaskResultGrid({
     return () => window.clearInterval(timer);
   }, [hasTickingCards]);
 
+  useEffect(() => {
+    window.localStorage.setItem(gridColumnsStorageKey, String(columns));
+  }, [columns]);
+
+  const updateColumns = (value: number) => {
+    setColumns(clampGridColumns(value));
+  };
+
   const toggleItemPrivacy = (itemId: string) => {
     setPrivateItemIds((current) => current.includes(itemId)
       ? current.filter((id) => id !== itemId)
@@ -156,8 +179,8 @@ export default function TaskResultGrid({
         <div>
           <h3>任务和结果</h3>
           <p>
-            本地总数 {localResultOverallTotal} 张，当前日期 {localResultTotal} 张，{activeCount} 个服务运行中，
-            本机运行 {queueStats.running} 个，排队 {queueStats.waiting} 个，已选 {selected.length} 个
+            总数 {localResultOverallTotal} 张，当前 {localResultTotal} 张，服务处理中 {activeCount} 个，
+            本机提交中 {queueStats.running} 个，排队 {queueStats.waiting} 个，已选 {selected.length} 个
           </p>
         </div>
         <div className="result-tools">
@@ -197,11 +220,23 @@ export default function TaskResultGrid({
             >
               {isPrivacyMode ? <EyeOff size={15} /> : <Eye size={15} />}
             </button>
-            {[2, 3, 4, 5].map((value) => (
-              <button className={columns === value ? "active" : ""} key={value} onClick={() => setColumns(value)}>
-                {value}
-              </button>
-            ))}
+            <button type="button" onClick={() => updateColumns(columns - 1)} disabled={columns <= minGridColumns} title="每排少一张">
+              <Minus size={15} />
+            </button>
+            <span className="column-count" title="每排显示数量">{columns}</span>
+            <input
+              className="column-slider"
+              type="range"
+              min={minGridColumns}
+              max={maxGridColumns}
+              step={1}
+              value={columns}
+              onChange={(event) => updateColumns(Number(event.target.value))}
+              aria-label={`每排显示 ${columns} 张`}
+            />
+            <button type="button" onClick={() => updateColumns(columns + 1)} disabled={columns >= maxGridColumns} title="每排多一张">
+              <Plus size={15} />
+            </button>
           </div>
           <button className="icon-btn danger" onClick={() => void deleteItems(selected)} disabled={!selected.length} title="删除选中的项目"><Trash2 size={16} /></button>
         </div>

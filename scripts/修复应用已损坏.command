@@ -1,10 +1,10 @@
 #!/bin/bash
 
-APP_PATH="/Applications/幻影畅享版.app"
+APP_PATH="/Applications/幻影G2生图.app"
 
 clear
 echo "=========================================="
-echo "       幻影畅享版 macOS 启动修复工具"
+echo "       幻影G2生图 macOS 启动修复工具"
 echo "=========================================="
 echo
 echo "此工具仅用于处理 macOS 提示“应用已损坏，无法打开”的情况。"
@@ -13,7 +13,7 @@ echo
 if [ ! -d "$APP_PATH" ]; then
   echo "未找到：$APP_PATH"
   echo
-  echo "请先把“幻影畅享版”拖入 Applications（应用程序）文件夹，"
+  echo "请先把“幻影G2生图”拖入 Applications（应用程序）文件夹，"
   echo "然后再次双击此修复工具。"
   echo
   read -r -p "按回车键关闭..."
@@ -37,7 +37,7 @@ if [ "$REPAIR_EXIT_CODE" -ne 0 ]; then
   exit "$REPAIR_EXIT_CODE"
 fi
 
-echo "修复完成，正在打开“幻影畅享版”..."
+echo "修复完成，正在打开“幻影G2生图”..."
 /usr/bin/open "$APP_PATH"
 echo
 read -r -p "按回车键关闭..."

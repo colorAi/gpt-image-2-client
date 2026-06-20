@@ -3,18 +3,19 @@ import type { ChatCompletionResponse, Connection, ImageEditResponse, ImageTask, 
 import { fileToDataUrl, getErrorMessage, promptAssistantContent, shouldFallbackToSyncEdit } from "./utils";
 
 export function createApiClient(connection: Connection) {
-  async function request<T>(path: string, options: { method?: string; body?: unknown } = {}) {
+  async function request<T>(path: string, options: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) {
     return invoke<T>("api_request", {
       payload: {
         connection,
         path,
         method: options.method || "GET",
         body: options.body ?? null,
+        headers: options.headers ?? null,
       },
     });
   }
 
-  async function multipart<T>(path: string, fields: Array<[string, string]>, files: File[]) {
+  async function multipart<T>(path: string, fields: Array<[string, string]>, files: File[], headers?: Record<string, string>) {
     const encodedFiles = await Promise.all(files.map(async (file) => ({
       name: file.name,
       dataUrl: await fileToDataUrl(file),
@@ -25,6 +26,7 @@ export function createApiClient(connection: Connection) {
         path,
         fields,
         files: encodedFiles,
+        headers: headers ?? null,
       },
     });
   }
@@ -32,8 +34,31 @@ export function createApiClient(connection: Connection) {
   return { request, multipart, connection };
 }
 
-export async function createGenerationTask(api: ReturnType<typeof createApiClient>, payload: { clientTaskId: string; prompt: string; model: string; size: string; quality: string }) {
-  return api.request<ImageTask>("/api/image-tasks/generations", {
+export async function createGenerationTask(api: ReturnType<typeof createApiClient>, payload: { clientTaskId: string; prompt: string; model: string; size: string; quality: string }): Promise<ImageTask> {
+  if (api.connection.channel === "stable") {
+    const body: Record<string, unknown> = {
+      model: payload.model,
+      prompt: payload.prompt,
+      n: 1,
+      response_format: "url",
+      size: payload.size || "auto",
+    };
+    if (payload.quality !== "auto") body.quality = payload.quality;
+    const result = await api.request<StableImageTaskResponse>("/v1/images/async/generations", {
+      method: "POST",
+      headers: { "X-Image-Task-ID": payload.clientTaskId },
+      body,
+    });
+    return normalizeStableImageTask(result, {
+      fallbackId: payload.clientTaskId,
+      mode: "generate",
+      model: payload.model,
+      size: payload.size,
+      quality: payload.quality,
+    });
+  }
+
+  const result = await api.request<ImageTask>("/api/image-tasks/generations", {
     method: "POST",
     body: {
       client_task_id: payload.clientTaskId,
@@ -43,9 +68,34 @@ export async function createGenerationTask(api: ReturnType<typeof createApiClien
       quality: payload.quality,
     },
   });
+  return { ...result, channel: "dream" };
 }
 
-export async function createEditTask(api: ReturnType<typeof createApiClient>, payload: { clientTaskId: string; files: File[]; prompt: string; model: string; size: string; quality: string }) {
+export async function createEditTask(api: ReturnType<typeof createApiClient>, payload: { clientTaskId: string; files: File[]; prompt: string; model: string; size: string; quality: string }): Promise<ImageTask> {
+  if (api.connection.channel === "stable") {
+    const fields: Array<[string, string]> = [
+      ["model", payload.model],
+      ["prompt", payload.prompt],
+      ["n", "1"],
+      ["response_format", "url"],
+      ["size", payload.size || "auto"],
+    ];
+    if (payload.quality !== "auto") fields.push(["quality", payload.quality]);
+    const result = await api.multipart<StableImageTaskResponse>(
+      "/v1/images/async/edits",
+      fields,
+      payload.files,
+      { "X-Image-Task-ID": payload.clientTaskId },
+    );
+    return normalizeStableImageTask(result, {
+      fallbackId: payload.clientTaskId,
+      mode: "edit",
+      model: payload.model,
+      size: payload.size,
+      quality: payload.quality,
+    });
+  }
+
   const fields: Array<[string, string]> = [
     ["client_task_id", payload.clientTaskId],
     ["prompt", payload.prompt],
@@ -54,7 +104,8 @@ export async function createEditTask(api: ReturnType<typeof createApiClient>, pa
   ];
   if (payload.size) fields.push(["size", payload.size]);
   try {
-    return await api.multipart<ImageTask>("/api/image-tasks/edits", fields, payload.files);
+    const result = await api.multipart<ImageTask>("/api/image-tasks/edits", fields, payload.files);
+    return { ...result, channel: "dream" };
   } catch (error) {
     if (!shouldFallbackToSyncEdit(error)) throw error;
     return createSyncEditTaskFallback(api, payload, error);
@@ -65,7 +116,7 @@ export async function createSyncEditTaskFallback(
   api: ReturnType<typeof createApiClient>,
   payload: { clientTaskId: string; files: File[]; prompt: string; model: string; size: string; quality: string },
   primaryError: unknown,
-) {
+): Promise<ImageTask> {
   const fields: Array<[string, string]> = [
     ["prompt", payload.prompt],
     ["model", payload.model],
@@ -81,6 +132,7 @@ export async function createSyncEditTaskFallback(
       id: payload.clientTaskId,
       status: "success",
       mode: "edit",
+      channel: "dream",
       model: payload.model,
       size: payload.size,
       quality: payload.quality,
@@ -95,10 +147,117 @@ export async function createSyncEditTaskFallback(
 }
 
 export async function fetchImageTasks(api: ReturnType<typeof createApiClient>, ids: string[]) {
+  if (api.connection.channel === "stable") {
+    const items = await Promise.all(ids.map(async (id) => {
+      const result = await api.request<StableImageTaskResponse>(`/v1/images/tasks/${encodeURIComponent(id)}`);
+      return normalizeStableImageTask(result, { fallbackId: id });
+    }));
+    return { items, missing_ids: [] };
+  }
+
   const params = new URLSearchParams();
   if (ids.length) params.set("ids", ids.join(","));
   params.set("_t", String(Date.now()));
   return api.request<{ items: ImageTask[]; missing_ids: string[] }>(`/api/image-tasks?${params.toString()}`);
+}
+
+type StableImageTaskResponse = {
+  task_id?: string;
+  taskId?: string;
+  status?: string;
+  status_code?: number;
+  statusCode?: number;
+  response?: unknown;
+  response_text?: string;
+  error?: unknown;
+  progress?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+function normalizeStableImageTask(
+  task: StableImageTaskResponse,
+  context: {
+    fallbackId: string;
+    mode?: "generate" | "edit";
+    model?: string;
+    size?: string;
+    quality?: string;
+  },
+): ImageTask {
+  const responsePayload = task.response ?? parseJsonText(task.response_text);
+  const statusCode = task.status_code ?? task.statusCode ?? 200;
+  const normalizedStatus = normalizeStableStatus(task.status, statusCode);
+  const data = extractStableImageData(responsePayload);
+  const error = normalizedStatus === "error" ? stableTaskError(task, responsePayload, statusCode) : undefined;
+  const now = new Date().toISOString();
+  return {
+    id: task.task_id || task.taskId || context.fallbackId,
+    status: normalizedStatus,
+    mode: context.mode || "generate",
+    channel: "stable",
+    ...(context.model ? { model: context.model } : {}),
+    ...(context.size ? { size: context.size } : {}),
+    ...(context.quality ? { quality: context.quality } : {}),
+    created_at: task.created_at || now,
+    updated_at: task.updated_at || now,
+    ...(data ? { data } : {}),
+    ...(error ? { error } : {}),
+    progress: task.progress || task.status || normalizedStatus,
+  };
+}
+
+function normalizeStableStatus(status: string | undefined, statusCode: number): ImageTask["status"] {
+  const normalizedStatus = status?.trim().toLowerCase();
+  if (normalizedStatus === "failed" || normalizedStatus === "error") return "error";
+  if (normalizedStatus === "succeeded" || normalizedStatus === "success" || normalizedStatus === "completed") {
+    return statusCode < 200 || statusCode >= 300 ? "error" : "success";
+  }
+  if (normalizedStatus === "queued" || normalizedStatus === "pending") return "queued";
+  if (normalizedStatus === "running" || normalizedStatus === "processing") return "running";
+  if (statusCode > 0 && (statusCode < 200 || statusCode >= 300)) return "error";
+  return "running";
+}
+
+function parseJsonText(text?: string) {
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function extractStableImageData(payload: unknown): ImageTask["data"] {
+  if (!payload || typeof payload !== "object") return undefined;
+  const data = (payload as { data?: unknown }).data;
+  if (!Array.isArray(data)) return undefined;
+  return data.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as { b64_json?: unknown; url?: unknown; revised_prompt?: unknown };
+    const image = {
+      ...(typeof row.b64_json === "string" ? { b64_json: row.b64_json } : {}),
+      ...(typeof row.url === "string" ? { url: row.url } : {}),
+      ...(typeof row.revised_prompt === "string" ? { revised_prompt: row.revised_prompt } : {}),
+    };
+    return image.b64_json || image.url ? [image] : [];
+  });
+}
+
+function stableTaskError(task: StableImageTaskResponse, payload: unknown, statusCode: number) {
+  const candidates = [
+    task.error,
+    payload && typeof payload === "object" ? (payload as { error?: unknown }).error : undefined,
+    payload && typeof payload === "object" ? (payload as { message?: unknown }).message : undefined,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+    if (candidate && typeof candidate === "object") {
+      const message = (candidate as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim()) return message.trim();
+    }
+  }
+  return `稳定版任务失败（HTTP ${statusCode}）`;
 }
 
 export async function askPromptAssistant(

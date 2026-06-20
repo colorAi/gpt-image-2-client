@@ -1,6 +1,12 @@
+export type ApiChannel = "dream" | "stable";
+export type ImageResolution = "1K" | "2K" | "4K";
+export type ApiKeys = Record<ApiChannel, string>;
+
 export type Connection = {
   baseUrl: string;
   apiKey: string;
+  channel: ApiChannel;
+  apiKeys: ApiKeys;
 };
 
 export type ThemeMode = "light" | "dark";
@@ -10,6 +16,7 @@ export type ImageTask = {
   id: string;
   status: "queued" | "running" | "success" | "error";
   mode: "generate" | "edit";
+  channel?: ApiChannel;
   model?: string;
   size?: string;
   quality?: string;
@@ -135,6 +142,7 @@ export type PendingPromptJob = {
   id: string;
   prompt: string;
   files: File[];
+  channel: ApiChannel;
   model: string;
   size: string;
   quality: string;
@@ -146,6 +154,7 @@ export type PendingPromptJob = {
 
 export type SubmitPromptOptions = {
   files?: File[];
+  channel?: ApiChannel;
   model?: string;
   size?: string;
   quality?: string;

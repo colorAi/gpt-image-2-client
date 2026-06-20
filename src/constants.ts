@@ -1,8 +1,23 @@
-import type { Connection, ImageTask } from "./types";
+import type { ApiChannel, ApiKeys, Connection, ImageResolution, ImageTask } from "./types";
 
 export const fixedBaseUrl = "https://1kgpt.hootoo.dpdns.org";
+export const stableBaseUrl = "https://api.hootoo.dpdns.org";
+export const apiChannelBaseUrls: Record<ApiChannel, string> = {
+  dream: fixedBaseUrl,
+  stable: stableBaseUrl,
+};
+export const apiChannelOptions: Array<{ value: ApiChannel; label: string; description: string }> = [
+  { value: "dream", label: "畅享版", description: "原有任务接口" },
+  { value: "stable", label: "稳定版", description: "稳定接口与高清分辨率" },
+];
 export const clientDownloadUrl = "https://pan.quark.cn/s/3da05efbef6e";
-export const defaultConnection: Connection = { baseUrl: fixedBaseUrl, apiKey: "" };
+export const defaultApiKeys: ApiKeys = { dream: "", stable: "" };
+export const defaultConnection: Connection = {
+  baseUrl: fixedBaseUrl,
+  apiKey: "",
+  channel: "dream",
+  apiKeys: defaultApiKeys,
+};
 export const defaultImageModel = "gpt-image-2";
 export const aspectOptions = [
   { label: "1:1", size: "1024x1024" },
@@ -15,6 +30,94 @@ export const aspectOptions = [
   { label: "auto", size: "" },
 ];
 export const qualityOptions = ["auto", "low", "medium", "high"];
+export const resolutionOptions: ImageResolution[] = ["1K", "2K", "4K"];
+export const stableSizeByResolutionAndAspect: Record<ImageResolution, Record<string, string>> = {
+  "1K": {
+    "1:1": "1024x1024",
+    "9:16": "720x1280",
+    "16:9": "1280x720",
+    "4:3": "1152x864",
+    "3:2": "1248x832",
+    "3:4": "864x1152",
+    "2:3": "832x1248",
+  },
+  "2K": {
+    "1:1": "2048x2048",
+    "9:16": "1440x2560",
+    "16:9": "2560x1440",
+    "4:3": "2304x1728",
+    "3:2": "2496x1664",
+    "3:4": "1728x2304",
+    "2:3": "1664x2496",
+  },
+  "4K": {
+    "1:1": "2880x2880",
+    "9:16": "2160x3840",
+    "16:9": "3840x2160",
+    "4:3": "3264x2448",
+    "3:2": "3504x2336",
+    "3:4": "2448x3264",
+    "2:3": "2336x3504",
+  },
+};
+
+export function normalizeApiChannel(value: unknown): ApiChannel {
+  return value === "stable" ? "stable" : "dream";
+}
+
+export function normalizeApiKeys(
+  value: Partial<ApiKeys> | undefined,
+  legacyChannel: ApiChannel = "dream",
+  legacyApiKey = "",
+): ApiKeys {
+  const keys = {
+    dream: value?.dream?.trim() || "",
+    stable: value?.stable?.trim() || "",
+  };
+  if (!keys[legacyChannel] && legacyApiKey.trim()) {
+    keys[legacyChannel] = legacyApiKey.trim();
+  }
+  return keys;
+}
+
+export function connectionForChannel(channel: ApiChannel, apiKeys: Partial<ApiKeys> = defaultApiKeys): Connection {
+  const normalizedKeys = normalizeApiKeys(apiKeys);
+  return {
+    channel,
+    baseUrl: apiChannelBaseUrls[channel],
+    apiKey: normalizedKeys[channel],
+    apiKeys: normalizedKeys,
+  };
+}
+
+export function connectionWithApiKey(connection: Connection, apiKey: string): Connection {
+  const apiKeys = {
+    ...connection.apiKeys,
+    [connection.channel]: apiKey,
+  };
+  return {
+    ...connection,
+    apiKey,
+    apiKeys,
+  };
+}
+
+export function resolveImageSize(channel: ApiChannel, aspect: string, resolution: ImageResolution) {
+  if (channel === "stable") {
+    if (aspect === "auto") return "auto";
+    return stableSizeByResolutionAndAspect[resolution][aspect] || stableSizeByResolutionAndAspect["1K"]["1:1"];
+  }
+  return aspectOptions.find((item) => item.label === aspect)?.size || "";
+}
+
+export function stableSelectionFromSize(size?: string) {
+  if (!size || size === "auto") return null;
+  for (const resolution of resolutionOptions) {
+    const match = Object.entries(stableSizeByResolutionAndAspect[resolution]).find(([, value]) => value === size);
+    if (match) return { resolution, aspect: match[0] };
+  }
+  return null;
+}
 export const activeStatuses = new Set<ImageTask["status"]>(["queued", "running"]);
 export const terminalStatuses = new Set<ImageTask["status"]>(["success", "error"]);
 export const promptQueueReleaseProgresses = new Set([

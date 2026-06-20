@@ -1,8 +1,8 @@
 [package]
 name = "phantom_image_client"
-version = "1.1.6"
-description = "幻影畅享版"
-authors = ["幻影畅享版"]
+version = "1.1.7"
+description = "幻影G2生图"
+authors = ["幻影G2生图"]
 edition = "2021"
 
 [lib]

@@ -149,7 +149,8 @@ export function withTaskTimeout(task: TaskRecord, now = Date.now()) {
 }
 
 export function withRunningTimer(task: TaskRecord, now = Date.now()) {
-  const normalized = normalizeImageTask(task) as TaskRecord;
+  const recoveredTask = recoverStableImageDownloadTask(recoverStableHttpZeroTask(task));
+  const normalized = normalizeImageTask(recoveredTask) as TaskRecord;
   const timed = withTaskTimeout(normalized, now);
   if (timed.status !== "running") {
     return {
@@ -166,9 +167,44 @@ export function withRunningTimer(task: TaskRecord, now = Date.now()) {
   };
 }
 
+export function recoverStableImageDownloadTask<T extends TaskRecord>(task: T): T {
+  if (
+    task.channel !== "stable"
+    || task.status !== "success"
+    || task.localSaveError?.trim() !== "下载图片失败 (400 Bad Request)"
+  ) {
+    return task;
+  }
+  return {
+    ...task,
+    localSaveError: "",
+  };
+}
+
+export function recoverStableHttpZeroTask<T extends TaskRecord>(task: T): T {
+  if (
+    task.channel !== "stable"
+    || task.status !== "error"
+    || task.error?.trim() !== "稳定版任务失败（HTTP 0）"
+  ) {
+    return task;
+  }
+  return {
+    ...task,
+    status: "running",
+    error: undefined,
+    progress: "running",
+  };
+}
+
 export function mergeTaskUpdate(current: TaskRecord, next: ImageTask, now = Date.now()) {
   const normalizedNext = normalizeImageTask(next);
-  const merged = { ...current, ...normalizedNext };
+  const merged = {
+    ...current,
+    ...normalizedNext,
+    mode: current.mode || normalizedNext.mode,
+    created_at: current.created_at || normalizedNext.created_at,
+  };
   if (normalizedNext.status !== "running") {
     return {
       ...merged,

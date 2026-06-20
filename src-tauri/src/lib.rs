@@ -1,11 +1,12 @@
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, Local, NaiveDate};
 use image::codecs::jpeg::JpegEncoder;
-use reqwest::{multipart, Client, Method};
+use reqwest::{multipart, Client, Method, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     cmp::Ordering,
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -18,6 +19,7 @@ const CONNECTION_FILE: &str = "connection.json";
 const HISTORY_FILE: &str = "tasks.json";
 const SETTINGS_FILE: &str = "settings.json";
 const FIXED_BASE_URL: &str = "https://1kgpt.hootoo.dpdns.org";
+const LEGACY_APP_IDENTIFIER: &str = "com.phantom.image.client";
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -39,6 +41,7 @@ struct ApiRequestPayload {
     path: String,
     method: Option<String>,
     body: Option<Value>,
+    headers: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -55,6 +58,7 @@ struct MultipartRequestPayload {
     path: String,
     fields: Vec<(String, String)>,
     files: Vec<UploadedFile>,
+    headers: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -125,7 +129,27 @@ fn app_data_dir<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String
         .app_data_dir()
         .map_err(|error| format!("读取应用数据目录失败：{error}"))?;
     fs::create_dir_all(&dir).map_err(|error| format!("创建应用数据目录失败：{error}"))?;
+    migrate_legacy_app_data(&dir)?;
     Ok(dir)
+}
+
+fn migrate_legacy_app_data(dir: &Path) -> Result<(), String> {
+    let Some(parent) = dir.parent() else {
+        return Ok(());
+    };
+    let legacy_dir = parent.join(LEGACY_APP_IDENTIFIER);
+    if legacy_dir == dir || !legacy_dir.is_dir() {
+        return Ok(());
+    }
+    for filename in [CONNECTION_FILE, HISTORY_FILE, SETTINGS_FILE] {
+        let source = legacy_dir.join(filename);
+        let target = dir.join(filename);
+        if source.is_file() && !target.exists() {
+            fs::copy(&source, &target)
+                .map_err(|error| format!("迁移旧版配置失败（{filename}）：{error}"))?;
+        }
+    }
+    Ok(())
 }
 
 fn read_json_file<T: for<'de> Deserialize<'de>>(path: &Path, fallback: T) -> T {
@@ -518,14 +542,24 @@ async fn image_item_bytes_with_mime(
         .url
         .as_deref()
         .ok_or_else(|| "图片结果没有可保存的内容".to_string())?;
-    let mut request = client.get(url);
-    if !connection.api_key.trim().is_empty() {
-        request = request.bearer_auth(connection.api_key.trim());
-    }
-    let response = request
+    let image_url = resolve_image_url(connection, url)?;
+    let mut response = client
+        .get(image_url.clone())
         .send()
         .await
         .map_err(|error| format!("下载图片失败：{error}"))?;
+    if matches!(
+        response.status(),
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+    ) && !connection.api_key.trim().is_empty()
+    {
+        response = client
+            .get(image_url.clone())
+            .bearer_auth(connection.api_key.trim())
+            .send()
+            .await
+            .map_err(|error| format!("下载图片失败：{error}"))?;
+    }
     if !response.status().is_success() {
         return Err(format!("下载图片失败 ({})", response.status()));
     }
@@ -535,12 +569,23 @@ async fn image_item_bytes_with_mime(
         .and_then(|value| value.to_str().ok())
         .filter(|value| value.starts_with("image/"))
         .map(ToString::to_string)
-        .unwrap_or_else(|| image_mime_from_url(url));
+        .unwrap_or_else(|| image_mime_from_url(image_url.as_str()));
     response
         .bytes()
         .await
         .map(|bytes| (bytes.to_vec(), mime))
         .map_err(|error| format!("读取图片内容失败：{error}"))
+}
+
+fn resolve_image_url(connection: &Connection, value: &str) -> Result<Url, String> {
+    if let Ok(url) = Url::parse(value) {
+        return Ok(url);
+    }
+    let base_url = format!("{}/", normalize_base_url(&connection.base_url));
+    Url::parse(&base_url)
+        .map_err(|error| format!("服务地址无效：{error}"))?
+        .join(value)
+        .map_err(|error| format!("图片地址无效：{error}"))
 }
 
 fn parse_api_error_text(text: &str) -> String {
@@ -561,7 +606,7 @@ fn load_connection<R: Runtime>(app: tauri::AppHandle<R>) -> Result<Value, String
     let path = app_data_dir(&app)?.join(CONNECTION_FILE);
     Ok(read_json_file(
         &path,
-        json!({ "baseUrl": FIXED_BASE_URL, "apiKey": "" }),
+        json!({ "baseUrl": FIXED_BASE_URL, "apiKey": "", "channel": "dream" }),
     ))
 }
 
@@ -657,6 +702,11 @@ async fn api_request(payload: ApiRequestPayload) -> Result<Value, String> {
     let mut request = client
         .request(method, &url)
         .bearer_auth(payload.connection.api_key.trim());
+    if let Some(headers) = payload.headers {
+        for (name, value) in headers {
+            request = request.header(name, value);
+        }
+    }
     if let Some(body) = payload.body {
         request = request.json(&body);
     }
@@ -713,10 +763,16 @@ async fn api_multipart_request(payload: MultipartRequestPayload) -> Result<Value
         form = form.part("image", part);
     }
     let url = format!("{base_url}{}", payload.path);
-    let response = client
+    let mut request = client
         .post(&url)
         .bearer_auth(payload.connection.api_key.trim())
-        .multipart(form)
+        .multipart(form);
+    if let Some(headers) = payload.headers {
+        for (name, value) in headers {
+            request = request.header(name, value);
+        }
+    }
+    let response = request
         .send()
         .await
         .map_err(|error| format!("请求失败：{error}"))?;

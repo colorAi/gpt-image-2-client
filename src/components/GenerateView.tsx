@@ -2,10 +2,10 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { Image as ImageIcon, Languages, LoaderCircle, Sparkles, Upload, WandSparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { askPromptAssistant, createEditTask, createGenerationTask, fetchImageTasks, translatePromptText } from "../api";
+import { askPromptAssistant, createApiClient, createEditTask, createGenerationTask, fetchImageTasks, translatePromptText } from "../api";
 import type { ApiClient } from "../api";
-import { aspectOptions, defaultImageModel, maxClientBatchConcurrency, maxClientEditConcurrency, maxPreviewHydrateAttempts, qualityOptions } from "../constants";
-import type { ConfirmRequest, ImageTask, LocalResultRecord, NativeDroppedFile, NativeLocalImagePage, PendingPromptJob, PromptAssistantMessage, PromptQueueStats, SubmitPromptOptions, TaskRecord, Toast } from "../types";
+import { aspectOptions, connectionForChannel, defaultImageModel, maxClientBatchConcurrency, maxClientEditConcurrency, maxPreviewHydrateAttempts, normalizeApiChannel, qualityOptions, resolutionOptions, resolveImageSize, stableSelectionFromSize } from "../constants";
+import type { ApiChannel, ConfirmRequest, ImageResolution, ImageTask, LocalResultRecord, NativeDroppedFile, NativeLocalImagePage, PendingPromptJob, PromptAssistantMessage, PromptQueueStats, SubmitPromptOptions, TaskRecord, Toast } from "../types";
 import { aspectLabelFromSize, compactTaskForStorage, compressReferenceImage, fileFromDataUrl, fileToDataUrl, getErrorMessage, hasPendingPreviewHydration, isImageFile, isPollableTask, localDateString, localSortKey, mergeTaskUpdate, nativeLocalImageToRecord, shouldApplyTaskUpdate, shouldReleasePromptQueueSlot, splitPromptGroups, withRunningTimer, withTaskTimeout } from "../utils";
 import ConfirmDialog from "./ConfirmDialog";
 import { FestivalButtonDragonHead, FestivalButtonDragonTail } from "./FestivalRail";
@@ -25,6 +25,7 @@ export default function GenerateView({
   const [aspect, setAspect] = useState("1:1");
   const [quality, setQuality] = useState("auto");
   const [count, setCount] = useState(1);
+  const [resolution, setResolution] = useState<ImageResolution>("1K");
   const [splitSubmit, setSplitSubmit] = useState(false);
   const [commonPrompt, setCommonPrompt] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -62,8 +63,13 @@ export default function GenerateView({
   const previewHydrateRetryAfter = useRef(new Map<string, number>());
   const previewHydrateRetryTimers = useRef(new Map<string, number>());
   const isPromptQueuePumping = useRef(false);
-  const selectedSize = aspectOptions.find((item) => item.label === aspect)?.size || "";
-  const activeTaskIds = useMemo(() => tasks.filter(isPollableTask).map((item) => item.id).join(","), [tasks]);
+  const selectedSize = resolveImageSize(api.connection.channel, aspect, resolution);
+  const activePollTargets = useMemo(() => tasks.filter(isPollableTask).map((item) => ({
+    id: item.id,
+    channel: normalizeApiChannel(item.channel),
+  })), [tasks]);
+  const activeTaskIds = activePollTargets.map((item) => item.id).join(",");
+  const activeTaskChannels = activePollTargets.map((item) => `${item.channel}:${item.id}`).join(",");
   const activeCount = activeTaskIds ? activeTaskIds.split(",").length : 0;
   const syncQueueStats = useCallback(() => {
     setQueueStats({
@@ -300,18 +306,29 @@ export default function GenerateView({
   }, [api, resultDir, schedulePreviewHydrateRetry, tasks]);
 
   useEffect(() => {
-    const activeIds = activeTaskIds ? activeTaskIds.split(",") : [];
-    if (!activeIds.length) return;
+    if (!activePollTargets.length) return;
+    const targetsByChannel = new Map<ApiChannel, string[]>();
+    activePollTargets.forEach((target) => {
+      const ids = targetsByChannel.get(target.channel) || [];
+      ids.push(target.id);
+      targetsByChannel.set(target.channel, ids);
+    });
     let cancelled = false;
     let inFlight = false;
     const syncTasks = async () => {
       if (inFlight) return;
       inFlight = true;
       try {
-        const data = await fetchImageTasks(api, activeIds);
+        const responses = await Promise.all(Array.from(targetsByChannel.entries()).map(async ([channel, ids]) => {
+          const channelApi = channel === api.connection.channel
+            ? api
+            : createApiClient(connectionForChannel(channel, api.connection.apiKeys));
+          return fetchImageTasks(channelApi, ids);
+        }));
         if (cancelled) return;
-        const taskMap = new Map(data.items.map((item) => [item.id, item]));
-        data.items.forEach(releasePromptQueueWaiter);
+        const items = responses.flatMap((response) => response.items);
+        const taskMap = new Map(items.map((item) => [item.id, item]));
+        items.forEach(releasePromptQueueWaiter);
         const receivedAt = Date.now();
         setTasks((current) => current.map((item) => {
           const next = taskMap.get(item.id);
@@ -329,7 +346,7 @@ export default function GenerateView({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [api, activeTaskIds, releasePromptQueueWaiter]);
+  }, [api, activeTaskChannels, activeTaskIds, releasePromptQueueWaiter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -446,11 +463,15 @@ export default function GenerateView({
 
   const runPromptJob = useCallback(async (job: PendingPromptJob) => {
     try {
+      const jobApi = job.channel === api.connection.channel
+        ? api
+        : createApiClient(connectionForChannel(job.channel, api.connection.apiKeys));
       const task = job.files.length
-        ? await createEditTask(api, { clientTaskId: job.id, files: job.files, prompt: job.prompt, model: job.model, size: job.size, quality: job.quality })
-        : await createGenerationTask(api, { clientTaskId: job.id, prompt: job.prompt, model: job.model, size: job.size, quality: job.quality });
+        ? await createEditTask(jobApi, { clientTaskId: job.id, files: job.files, prompt: job.prompt, model: job.model, size: job.size, quality: job.quality })
+        : await createGenerationTask(jobApi, { clientTaskId: job.id, prompt: job.prompt, model: job.model, size: job.size, quality: job.quality });
       const record = withRunningTimer({
         ...task,
+        channel: job.channel,
         prompt: job.prompt,
         localCreatedAt: job.localCreatedAt,
         clientTaskId: job.id,
@@ -526,6 +547,7 @@ export default function GenerateView({
       const startedAt = Date.now();
       const submittedAt = new Date(startedAt);
       const submitFiles = options.files ?? files;
+      const submitChannel = options.channel || api.connection.channel;
       const submitModel = options.model || model;
       const submitSize = options.size ?? selectedSize;
       const submitQuality = options.quality || quality;
@@ -533,6 +555,7 @@ export default function GenerateView({
         id: `${startedAt}-${index}-${Math.random().toString(16).slice(2)}`,
         prompt: text,
         files: submitFiles.slice(),
+        channel: submitChannel,
         model: submitModel,
         size: submitSize,
         quality: submitQuality,
@@ -545,6 +568,7 @@ export default function GenerateView({
         id: job.id,
         status: "queued",
         mode: job.files.length ? "edit" : "generate",
+        channel: job.channel,
         model: job.model,
         size: job.size,
         quality: job.quality,
@@ -600,7 +624,8 @@ export default function GenerateView({
       await submitPromptList(prompts, "每段已作为单独任务");
       return;
     }
-    await submitPromptList(Array.from({ length: count }, () => text), "可继续提交");
+    const submitCount = api.connection.channel === "stable" ? 1 : count;
+    await submitPromptList(Array.from({ length: submitCount }, () => text), "可继续提交");
   };
 
   const fillTaskForEdit = useCallback((task: TaskRecord) => {
@@ -608,8 +633,15 @@ export default function GenerateView({
     setSplitSubmit(false);
     setCommonPrompt("");
     setCount(1);
-    const nextAspect = aspectLabelFromSize(task.size);
-    if (nextAspect) setAspect(nextAspect);
+    const taskChannel = normalizeApiChannel(task.channel);
+    const stableSelection = taskChannel === "stable" ? stableSelectionFromSize(task.size) : null;
+    if (stableSelection) {
+      setAspect(stableSelection.aspect);
+      setResolution(stableSelection.resolution);
+    } else {
+      const nextAspect = aspectLabelFromSize(task.size);
+      if (nextAspect) setAspect(nextAspect);
+    }
     if (task.quality && qualityOptions.includes(task.quality)) setQuality(task.quality);
     if (task.mode === "generate") {
       setFiles([]);
@@ -632,6 +664,7 @@ export default function GenerateView({
     }
     await submitPromptList([retryPrompt], "已重新提交", {
       files: task.mode === "edit" ? files.slice() : [],
+      channel: normalizeApiChannel(task.channel),
       model: task.model || model,
       size: task.size ?? selectedSize,
       quality: task.quality || quality,
@@ -835,7 +868,11 @@ export default function GenerateView({
           <div className="controls-grid">
             <label><span>比例</span><select value={aspect} onChange={(event) => setAspect(event.target.value)}>{aspectOptions.map((item) => <option key={item.label} value={item.label}>{item.label}</option>)}</select></label>
             <label><span>质量</span><select value={quality} onChange={(event) => setQuality(event.target.value)}>{qualityOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
-            <label><span>数量</span><input type="number" min={1} max={4} value={count} disabled={splitSubmit} onChange={(event) => setCount(Math.min(4, Math.max(1, Number(event.target.value) || 1)))} /></label>
+            {api.connection.channel === "stable" ? (
+              <label><span>分辨率</span><select value={resolution} onChange={(event) => setResolution(event.target.value as ImageResolution)}>{resolutionOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            ) : (
+              <label><span>数量</span><input type="number" min={1} max={4} value={count} disabled={splitSubmit} onChange={(event) => setCount(Math.min(4, Math.max(1, Number(event.target.value) || 1)))} /></label>
+            )}
             <button className="btn translate-prompt-button" type="button" onClick={() => void translateCurrentPrompt()} disabled={!prompt.trim() || isTranslatingPrompt}>
               {isTranslatingPrompt ? <LoaderCircle size={15} className="spin" /> : <Languages size={15} />}
               翻译
