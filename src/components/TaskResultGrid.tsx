@@ -1,6 +1,6 @@
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Eye, EyeOff, FilePenLine, FolderOpen, Image as ImageIcon, ImagePlus, LoaderCircle, Minus, Paintbrush, Plus, RotateCcw, Trash2, X } from "lucide-react";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { localResultPageSizeOptions } from "../constants";
 import type { LocalResultRecord, PreviewItem, PromptQueueStats, TaskRecord, Toast } from "../types";
 import { compactLocalResultTitle, formatElapsedTime, formatResolution, formatSize, getErrorMessage, hasPendingPreviewHydration, isActiveTask, localDataUrlFromImageItem, localDateString, progressText, taskElapsedSeconds, taskStatusLabel } from "../utils";
@@ -175,13 +175,40 @@ export default function TaskResultGrid({
 
   return (
     <div className="results-panel">
-      <div className="section-bar">
-        <div>
-          <h3>任务和结果</h3>
-          <p>
-            总数 {localResultOverallTotal} 张，当前 {localResultTotal} 张，服务处理中 {activeCount} 个，
-            本机提交中 {queueStats.running} 个，排队 {queueStats.waiting} 个，已选 {selected.length} 个
-          </p>
+      <div className="section-bar result-section-bar">
+        <div className="result-heading-row">
+          <div className="result-stats" aria-label="任务和结果统计">
+            <span className="result-stat">
+              <span>总数</span>
+              <strong>{localResultOverallTotal}</strong>
+              <span>张</span>
+            </span>
+            <span className="result-stat">
+              <span>当前</span>
+              <strong>{localResultTotal}</strong>
+              <span>张</span>
+            </span>
+            <span className="result-stat running">
+              <span>服务处理中</span>
+              <strong>{activeCount}</strong>
+              <span>个</span>
+            </span>
+            <span className="result-stat running">
+              <span>本机提交中</span>
+              <strong>{queueStats.running}</strong>
+              <span>个</span>
+            </span>
+            <span className="result-stat queued">
+              <span>排队中</span>
+              <strong>{queueStats.waiting}</strong>
+              <span>个</span>
+            </span>
+            <span className="result-stat selected">
+              <span>已选</span>
+              <strong>{selected.length}</strong>
+              <span>个</span>
+            </span>
+          </div>
         </div>
         <div className="result-tools">
           <label className="result-date-control">
@@ -445,6 +472,85 @@ function Lightbox({
   onUsePrompt: (prompt: string) => void;
 }) {
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
+  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
+  const [fitZoom, setFitZoom] = useState(1);
+  const [zoom, setZoom] = useState(1);
+  const [zoomMode, setZoomMode] = useState<"fit" | "custom">("fit");
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const stageRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; panX: number; panY: number } | null>(null);
+  const transformFrameRef = useRef<number | null>(null);
+  const pendingTransformRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
+  const liveTransformRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
+
+  const cancelScheduledTransform = useCallback(() => {
+    pendingTransformRef.current = null;
+    if (transformFrameRef.current !== null) {
+      window.cancelAnimationFrame(transformFrameRef.current);
+      transformFrameRef.current = null;
+    }
+  }, []);
+
+  const scheduleTransform = useCallback((nextZoom: number, nextPan: { x: number; y: number }) => {
+    liveTransformRef.current = { zoom: nextZoom, pan: nextPan };
+    pendingTransformRef.current = { zoom: nextZoom, pan: nextPan };
+    if (transformFrameRef.current !== null) return;
+    transformFrameRef.current = window.requestAnimationFrame(() => {
+      transformFrameRef.current = null;
+      const pending = pendingTransformRef.current;
+      pendingTransformRef.current = null;
+      if (!pending) return;
+      setZoom(pending.zoom);
+      setPan(pending.pan);
+    });
+  }, []);
+
+  const calculateFitZoom = useCallback((width: number, height: number) => {
+    const stage = stageRef.current;
+    if (!stage || !width || !height) return 1;
+    const rect = stage.getBoundingClientRect();
+    const availableWidth = Math.max(1, rect.width - 48);
+    const availableHeight = Math.max(1, rect.height - 96);
+    return Math.max(0.05, Math.min(8, availableWidth / width, availableHeight / height));
+  }, []);
+
+  const resetToFit = useCallback(() => {
+    const nextZoom = calculateFitZoom(naturalSize.width, naturalSize.height);
+    cancelScheduledTransform();
+    liveTransformRef.current = { zoom: nextZoom, pan: { x: 0, y: 0 } };
+    setFitZoom(nextZoom);
+    setZoom(nextZoom);
+    setZoomMode("fit");
+    setPan({ x: 0, y: 0 });
+  }, [calculateFitZoom, cancelScheduledTransform, naturalSize.height, naturalSize.width]);
+
+  const showOriginalSize = useCallback(() => {
+    cancelScheduledTransform();
+    liveTransformRef.current = { zoom: 1, pan: { x: 0, y: 0 } };
+    setZoom(1);
+    setZoomMode("custom");
+    setPan({ x: 0, y: 0 });
+  }, [cancelScheduledTransform]);
+
+  const handleWheel = useCallback((event: WheelEvent) => {
+    if (!naturalSize.width || !naturalSize.height) return;
+    event.preventDefault();
+    const stage = stageRef.current;
+    if (!stage) return;
+    const rect = stage.getBoundingClientRect();
+    const currentTransform = liveTransformRef.current;
+    const factor = Math.exp(-event.deltaY * 0.0015);
+    const nextZoom = Math.min(8, Math.max(0.05, currentTransform.zoom * factor));
+    const imageCenterX = rect.left + rect.width / 2 + currentTransform.pan.x;
+    const imageCenterY = rect.top + rect.height / 2 + currentTransform.pan.y;
+    const zoomRatio = nextZoom / currentTransform.zoom;
+    const nextPan = {
+      x: event.clientX - (rect.left + rect.width / 2) - (event.clientX - imageCenterX) * zoomRatio,
+      y: event.clientY - (rect.top + rect.height / 2) - (event.clientY - imageCenterY) * zoomRatio,
+    };
+    scheduleTransform(nextZoom, nextPan);
+    setZoomMode("custom");
+  }, [naturalSize.height, naturalSize.width, scheduleTransform]);
 
   useEffect(() => {
     if (!item) return;
@@ -468,21 +574,132 @@ function Lightbox({
 
   useEffect(() => {
     setIsPromptExpanded(false);
-  }, [item?.id]);
+    setNaturalSize({ width: 0, height: 0 });
+    setFitZoom(1);
+    setZoom(1);
+    setZoomMode("fit");
+    setPan({ x: 0, y: 0 });
+    liveTransformRef.current = { zoom: 1, pan: { x: 0, y: 0 } };
+    dragRef.current = null;
+    cancelScheduledTransform();
+  }, [cancelScheduledTransform, item?.id]);
+
+  useEffect(() => cancelScheduledTransform, [cancelScheduledTransform]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !naturalSize.width || !naturalSize.height) return;
+    const updateFitZoom = () => {
+      const nextZoom = calculateFitZoom(naturalSize.width, naturalSize.height);
+      setFitZoom(nextZoom);
+      if (zoomMode === "fit") {
+        liveTransformRef.current = { zoom: nextZoom, pan: { x: 0, y: 0 } };
+        setZoom(nextZoom);
+        setPan({ x: 0, y: 0 });
+      }
+    };
+    updateFitZoom();
+    const observer = new ResizeObserver(updateFitZoom);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [calculateFitZoom, naturalSize.height, naturalSize.width, zoomMode]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !item) return;
+    stage.addEventListener("wheel", handleWheel, { passive: false });
+    return () => stage.removeEventListener("wheel", handleWheel);
+  }, [handleWheel, item]);
 
   if (!item) return null;
   const prompt = item.prompt.trim();
+  const zoomPercent = Math.round(zoom * 100);
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !naturalSize.width) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      panX: liveTransformRef.current.pan.x,
+      panY: liveTransformRef.current.pan.y,
+    };
+    event.currentTarget.classList.add("dragging");
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    scheduleTransform(liveTransformRef.current.zoom, {
+      x: drag.panX + event.clientX - drag.startX,
+      y: drag.panY + event.clientY - drag.startY,
+    });
+  };
+
+  const endDragging = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    event.currentTarget.classList.remove("dragging");
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
   return (
     <div className="modal-backdrop lightbox" onClick={onClose}>
       <div className="lightbox-content" onClick={(event) => event.stopPropagation()}>
+        <div
+          ref={stageRef}
+          className="lightbox-stage"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={endDragging}
+          onPointerCancel={endDragging}
+          title="滚轮缩放，按住鼠标左键拖动"
+        >
+          <img
+            src={item.src}
+            alt={prompt || item.title}
+            draggable={false}
+            onLoad={(event) => {
+              const width = event.currentTarget.naturalWidth;
+              const height = event.currentTarget.naturalHeight;
+              const nextFitZoom = calculateFitZoom(width, height);
+              cancelScheduledTransform();
+              setNaturalSize({ width, height });
+              setFitZoom(nextFitZoom);
+              liveTransformRef.current = { zoom: nextFitZoom, pan: { x: 0, y: 0 } };
+              setZoom(nextFitZoom);
+              setZoomMode("fit");
+              setPan({ x: 0, y: 0 });
+            }}
+            style={naturalSize.width ? {
+              width: naturalSize.width,
+              height: naturalSize.height,
+              transform: `translate3d(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px), 0) scale(${zoom})`,
+            } : undefined}
+          />
+        </div>
         <button className="icon-btn close" onClick={onClose} title="关闭"><X size={18} /></button>
         <button className="icon-btn lightbox-nav previous" onClick={onPrevious} disabled={!hasPrevious} title="上一张"><ChevronLeft size={22} /></button>
-        <img src={item.src} alt={prompt || item.title} />
         <button className="icon-btn lightbox-nav next" onClick={onNext} disabled={!hasNext} title="下一张"><ChevronRight size={22} /></button>
         <div className={`lightbox-prompt ${isPromptExpanded ? "expanded" : "collapsed"}`}>
+          <p>{prompt || "没有保存提示词"}</p>
           <div className="lightbox-prompt-header">
-            <strong>{item.title}</strong>
+            <div className="lightbox-image-meta">
+              <strong>{item.title}</strong>
+              {naturalSize.width > 0 ? <span>{naturalSize.width} × {naturalSize.height}</span> : null}
+            </div>
             <div className="lightbox-actions">
+              <span className="lightbox-zoom-value" title={`适配窗口为 ${Math.round(fitZoom * 100)}%`}>{zoomPercent}%</span>
+              <button className="btn small" onClick={resetToFit} disabled={!naturalSize.width} title="恢复为适配窗口尺寸">
+                <RotateCcw size={14} />重置
+              </button>
+              <button className="btn small" onClick={showOriginalSize} disabled={!naturalSize.width} title="按图片原始像素显示">
+                原始大小
+              </button>
               <button className="btn small" onClick={() => setIsPromptExpanded((current) => !current)}>
                 {isPromptExpanded ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
                 {isPromptExpanded ? "收起" : "展开"}
@@ -491,7 +708,6 @@ function Lightbox({
               <button className="btn small primary" onClick={() => prompt && onUsePrompt(prompt)} disabled={!prompt}><Paintbrush size={14} />填入</button>
             </div>
           </div>
-          <p>{prompt || "没有保存提示词"}</p>
         </div>
       </div>
     </div>

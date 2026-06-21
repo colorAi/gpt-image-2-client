@@ -1142,6 +1142,62 @@ textarea:focus {
   padding: 14px;
 }
 
+.result-section-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+  padding: 10px 12px;
+}
+
+.result-heading-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.result-stats {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px 10px;
+  flex-wrap: wrap;
+}
+
+.result-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.result-stat strong {
+  color: var(--text-strong);
+  font-size: 18px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.result-stat.running strong {
+  color: var(--accent-hover);
+}
+
+.result-stat.queued strong {
+  color: var(--warning);
+}
+
+.result-stat.selected strong {
+  color: var(--danger);
+}
+
 .section-bar p {
   margin: 3px 0 0;
   font-size: 13px;
@@ -1149,29 +1205,39 @@ textarea:focus {
 
 .result-tools {
   display: flex;
-  gap: 10px;
+  min-width: 0;
+  width: 100%;
+  gap: 8px;
   align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 1px;
+  scrollbar-width: thin;
 }
 
 .result-date-control,
 .result-page-size {
   display: inline-grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 7px;
+  gap: 6px;
   align-items: center;
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .result-date-control input {
-  width: 142px;
+  width: 136px;
+  height: 32px;
+  padding: 0 9px;
 }
 
 .result-page-size select {
-  width: 76px;
+  width: 68px;
+  height: 32px;
+  padding: 0 9px;
 }
 
 .pager-control {
@@ -1184,14 +1250,15 @@ textarea:focus {
 }
 
 .pager-control .icon-btn {
-  width: 32px;
-  min-height: 34px;
+  width: 30px;
+  min-height: 32px;
   border: 0;
   border-radius: 0;
+  padding: 0;
 }
 
 .pager-control span {
-  min-width: 54px;
+  min-width: 50px;
   border-right: 1px solid var(--border-subtle);
   border-left: 1px solid var(--border-subtle);
   color: var(--text-strong);
@@ -1210,8 +1277,8 @@ textarea:focus {
 }
 
 .column-control button {
-  width: 32px;
-  min-height: 34px;
+  width: 30px;
+  min-height: 32px;
   border: 0;
   border-right: 1px solid var(--border-subtle);
   background: transparent;
@@ -1226,8 +1293,8 @@ textarea:focus {
 
 .column-count {
   display: inline-grid;
-  min-width: 34px;
-  height: 34px;
+  min-width: 30px;
+  height: 32px;
   place-items: center;
   border-right: 1px solid var(--border-subtle);
   color: var(--text-strong);
@@ -1237,9 +1304,9 @@ textarea:focus {
 }
 
 .column-slider {
-  width: 112px;
-  height: 34px;
-  min-width: 76px;
+  width: 94px;
+  height: 32px;
+  min-width: 70px;
   border: 0;
   border-right: 1px solid var(--border-subtle);
   border-radius: 0;
@@ -1301,6 +1368,12 @@ textarea:focus {
 .column-control button.privacy-active {
   background: var(--danger-solid);
   color: var(--on-dark);
+}
+
+.result-tools > .icon-btn.danger {
+  width: 34px;
+  min-height: 32px;
+  padding: 0;
 }
 
 .task-scroll {
@@ -1754,9 +1827,6 @@ textarea:focus {
 
 .lightbox-content {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   width: calc(100vw - 36px);
   height: calc(100vh - 36px);
   min-width: 0;
@@ -1765,18 +1835,45 @@ textarea:focus {
   text-align: left;
 }
 
-.lightbox-content img {
+.modal-backdrop.lightbox {
+  background: rgba(8, 12, 18, 0.92);
+}
+
+.lightbox-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  cursor: grab;
+  contain: strict;
+  touch-action: none;
+  user-select: none;
+}
+
+.lightbox-stage.dragging {
+  cursor: grabbing;
+}
+
+.lightbox-stage img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
   display: block;
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
   min-width: 0;
   min-height: 0;
   border-radius: 8px;
-  object-fit: contain;
+  transform: translate3d(-50%, -50%, 0);
+  transform-origin: center;
+  backface-visibility: hidden;
+  pointer-events: none;
+  will-change: transform;
 }
 
 .lightbox-content .close {
   position: absolute;
+  z-index: 3;
   top: 10px;
   right: 10px;
   background: rgba(17, 24, 39, 0.76);
@@ -1790,6 +1887,7 @@ textarea:focus {
 
 .lightbox-nav {
   position: absolute;
+  z-index: 3;
   top: calc(50% - 22px);
   width: 44px;
   height: 44px;
@@ -1815,33 +1913,44 @@ textarea:focus {
 
 .lightbox-prompt {
   position: absolute;
+  z-index: 4;
   right: 12px;
   bottom: 12px;
   left: 12px;
-  max-height: 24vh;
-  overflow: auto;
+  display: flex;
+  max-height: min(42vh, 420px);
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 8px;
   background: rgba(17, 24, 39, 0.84);
-  padding: 10px 12px;
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(10px);
   transition: max-height 0.18s ease, background 0.18s ease;
 }
 
 .lightbox-prompt.collapsed {
-  max-height: 48px;
-  overflow: hidden;
+  max-height: 50px;
 }
 
 .lightbox-prompt-header {
   display: flex;
+  min-height: 48px;
+  flex: 0 0 auto;
   gap: 12px;
   align-items: center;
   justify-content: space-between;
+  padding: 7px 10px 7px 12px;
 }
 
-.lightbox-prompt-header strong {
+.lightbox-image-meta {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.lightbox-image-meta strong {
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
@@ -1849,22 +1958,62 @@ textarea:focus {
   white-space: nowrap;
 }
 
+.lightbox-image-meta span {
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .lightbox-actions {
   display: flex;
   flex: 0 0 auto;
   gap: 8px;
+  align-items: center;
+}
+
+.lightbox-zoom-value {
+  min-width: 46px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .lightbox-prompt p {
-  margin: 9px 0 0;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.86);
   font-size: 13px;
   line-height: 1.55;
+  padding: 12px;
   white-space: pre-wrap;
 }
 
 .lightbox-prompt.collapsed p {
   display: none;
+}
+
+@media (max-width: 820px) {
+  .lightbox-prompt-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .lightbox-actions {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .lightbox-prompt.collapsed {
+    max-height: 88px;
+  }
 }
 
 .toast-stack {
@@ -2338,6 +2487,21 @@ textarea:focus {
 
   .toolbar {
     align-items: stretch;
+  }
+
+  .result-heading-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .result-stats,
+  .result-tools {
+    justify-content: flex-start;
+  }
+
+  .result-tools {
+    flex-wrap: wrap;
+    overflow-x: visible;
   }
 
   .controls-grid {
