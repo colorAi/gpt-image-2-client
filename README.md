@@ -1,53 +1,110 @@
 # 幻影G2生图独立客户端
 
-## 同步版本号
+一个从主项目拆分出来的本地 Tauri 图片生成客户端。它不依赖主项目的 Next.js 页面和登录态，用户只需要在应用内填写后端 API Key，并选择本地结果目录，就可以提交图片生成、编辑和批量任务。
 
-发布新版本时运行：
+## 功能特性
+
+- 文生图：提交 `/api/image-tasks/generations` 后台任务。
+- 图生图/编辑：支持点击选择或拖拽上传参考图，提交 `/api/image-tasks/edits`。
+- 稳定版渠道：调用 `/v1/images/async/generations`、`/v1/images/async/edits`，支持 1K、2K、4K 分辨率。
+- 任务轮询：任务提交后进入列表，生成过程中可以继续并发提交。
+- 本地结果：生成成功后按日期落盘，可扫描、预览、删除和复用为参考图。
+- 提示词助手：调用 `/v1/chat/completions` 整理提示词。
+- 主题切换：内置默认主题和端午主题。
+
+## 技术栈
+
+- React 19 + TypeScript
+- Vite
+- Tauri 2
+- Rust 后端命令层
+
+## 开始使用
+
+### 环境要求
+
+- Node.js 20 或更高版本
+- npm
+- Rust stable
+- Tauri 2 所需的系统依赖
+
+Tauri 的系统依赖会随平台不同而变化，首次配置请参考官方文档：<https://v2.tauri.app/start/prerequisites/>
+
+### 安装依赖
 
 ```bash
-npm run version:sync -- 1.2.3
+npm install
 ```
 
-脚本会同步 npm、Tauri、Cargo、Cargo.lock，以及网页和软件窗口顶部标题中的版本号。
-
-这是从主项目拆出的本地 Tauri 图片生成客户端。它不依赖主项目的 Next 页面和登录状态，只需要填写主项目后端地址和 API Key。
-
-## 使用
+### 开发运行
 
 ```bash
-cd standalone-image-tool
-npm install
 npm run tauri:dev
 ```
 
-客户端可在配置中心切换两个 API 渠道：
+只启动前端开发服务：
 
-- 畅享版：`https://1kgpt.hootoo.dpdns.org`
-- 稳定版：`https://api.hootoo.dpdns.org`
+```bash
+npm run dev
+```
+
+### 应用配置
 
 启动后在配置中心填写：
 
-- API Key：主项目中可用的 admin/user key
-- 本地结果目录：可选。选择后，生成成功的图片会按日期落盘保存。
+- API Key：后端可用的 admin/user key。
+- API 渠道：
+  - 畅享版：`https://1kgpt.hootoo.dpdns.org`
+  - 稳定版：`https://api.hootoo.dpdns.org`
+- 本地结果目录：必选。选择后，生成成功的图片会按日期保存到本地，并生成缩略图。
 
-## 功能
+API Key 和本地设置保存在 Tauri 应用数据目录中，不会提交到仓库。请不要把自己的真实 Key 写入源码、截图或 issue。
 
-- 文生图：调用 `/api/image-tasks/generations` 提交后台任务
-- 图生图/编辑：通过点击或拖拽上传参考图，调用 `/api/image-tasks/edits`
-- 稳定版：调用 `/v1/images/async/generations` 或 `/v1/images/async/edits`，并支持 1K / 2K / 4K 分辨率
-- 任务轮询：任务提交后进入列表，生成中可继续并发提交
-- 本地结果：可扫描、预览和删除已保存到结果目录中的图片
-- 提示词助手：调用 `/v1/chat/completions` 整理提示词
-
-## 打包
+## 常用脚本
 
 ```bash
+npm run build
 npm run tauri:build
+npm run version:sync -- 1.2.3
 ```
 
-也可以直接双击：
+- `npm run build`：类型检查并构建前端产物。
+- `npm run tauri:build`：构建桌面应用。
+- `npm run version:sync -- 1.2.3`：同步 npm、Tauri、Cargo、Cargo.lock、网页标题和窗口标题中的版本号。
 
-- `build_tauri.command`：打 macOS `.app` 和 `.dmg`
-- `build_tauri_windows.command`：在 macOS 上交叉打 Windows x64 安装包，并复制一份可直接启动的 exe 到 `dist-portable/windows-x64/`
+也可以直接双击脚本打包：
 
-图标来自 `dist/G.png`，已生成到 `src-tauri/icons/` 并在 Tauri bundle 配置中引用。Windows 打包使用 `icons/icon.ico`。
+- `build_tauri.command`：构建 macOS `.app` 和 `.dmg`。
+- `build_tauri_windows.command`：在 macOS 上交叉构建 Windows x64 安装包，并复制一份可直接启动的 exe 到 `dist-portable/windows-x64/`。
+
+## 后端接口兼容
+
+客户端默认内置两个 API 渠道。如果你要接入自己的后端，可以 fork 后调整：
+
+- `src/constants.ts`：前端渠道名称和默认地址。
+- `src-tauri/src/lib.rs`：Rust 侧兼容旧配置时使用的默认地址。
+- `src/api.ts`：具体任务接口、字段和响应归一化逻辑。
+
+当前实现会使用 Bearer Token 访问后端，并通过 Tauri/Rust 层代理请求，避免浏览器跨域限制影响桌面客户端。
+
+## 目录结构
+
+```text
+.
+├── src/                  # React 前端
+├── src-tauri/            # Tauri/Rust 桌面端
+├── public/               # 静态图片资源
+├── scripts/              # 版本同步和本地修复脚本
+├── build_tauri.command   # macOS 打包脚本
+└── build_tauri_windows.command
+```
+
+## 开源协作
+
+欢迎提交 issue 和 pull request。较大的功能改动建议先开 issue 讨论接口、交互和兼容性，避免重复实现。
+
+贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。安全问题请参考 [SECURITY.md](SECURITY.md)。
+
+## 许可证
+
+本项目基于 [MIT License](LICENSE) 开源。

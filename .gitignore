@@ -4,3 +4,17 @@ src-tauri/target/
 .DS_Store
 tsconfig.tsbuildinfo
 dist-portable/
+.env
+.env.*
+!.env.example
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+*.pem
+*.p12
+*.key
+*.mobileprovision
+*.xcarchive/
+.tauri/
