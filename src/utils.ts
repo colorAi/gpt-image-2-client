@@ -91,8 +91,8 @@ export async function compressReferenceImage(file: File) {
   return new File([blob], jpegFileName(file.name), { type: "image/jpeg", lastModified: file.lastModified });
 }
 
-export function localDataUrlFromImageItem(item: { b64_json?: string; url?: string }) {
-  return item.b64_json ? `data:image/png;base64,${item.b64_json}` : "";
+export function localDataUrlFromImageItem(item: { b64_json?: string; url?: string; mime_type?: string }) {
+  return item.b64_json ? `data:${item.mime_type || "image/png"};base64,${item.b64_json}` : "";
 }
 
 export function hasRemoteOnlyImageData(task: Pick<TaskRecord, "data" | "status">) {
@@ -262,6 +262,7 @@ export function nativeLocalImageToRecord(item: NativeLocalImage): LocalResultRec
     url: thumbnailUrl,
     originalUrl,
     prompt: item.prompt || "",
+    taskType: item.taskType || item.task_type,
     created_at: item.created_at || item.createdAt || "",
     localCreatedAt: item.local_created_at || item.localCreatedAt || "",
     size: item.size,
@@ -276,7 +277,7 @@ export function isActiveTask(task: Pick<ImageTask, "status">) {
 }
 
 export function isPollableTask(task: TaskRecord) {
-  return isActiveTask(task) && !task.isLocalPending;
+  return task.taskType !== "reverse" && isActiveTask(task) && !task.isLocalPending;
 }
 
 export function shouldApplyTaskUpdate(current: TaskRecord, next: ImageTask) {

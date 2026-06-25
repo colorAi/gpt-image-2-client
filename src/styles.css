@@ -16,6 +16,7 @@
   --surface-subtle: #f7faf9;
   --surface-muted: #fbfcfc;
   --image-bg: #e9eef0;
+  --lightbox-backdrop: #eef1f4;
   --border: rgba(39, 45, 52, 0.12);
   --border-subtle: rgba(39, 45, 52, 0.1);
   --border-strong: rgba(39, 45, 52, 0.16);
@@ -61,6 +62,7 @@
   --surface-subtle: #121b21;
   --surface-muted: #141d24;
   --image-bg: #202a32;
+  --lightbox-backdrop: #070b10;
   --border: rgba(226, 232, 240, 0.12);
   --border-subtle: rgba(226, 232, 240, 0.09);
   --border-strong: rgba(226, 232, 240, 0.18);
@@ -100,6 +102,7 @@
   --surface-subtle: #f2f8ef;
   --surface-muted: #f7faf3;
   --image-bg: #e7f1e7;
+  --lightbox-backdrop: #eef4ec;
   --border: rgba(52, 101, 72, 0.15);
   --border-subtle: rgba(52, 101, 72, 0.1);
   --border-strong: rgba(52, 101, 72, 0.23);
@@ -130,6 +133,7 @@
   --surface-subtle: #14251b;
   --surface-muted: #17271e;
   --image-bg: #1b3025;
+  --lightbox-backdrop: #07110d;
   --border: rgba(167, 218, 177, 0.13);
   --border-subtle: rgba(167, 218, 177, 0.09);
   --border-strong: rgba(167, 218, 177, 0.2);
@@ -1083,7 +1087,7 @@ textarea:focus {
 
 .controls-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto auto;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
   align-items: end;
 }
@@ -1096,8 +1100,7 @@ textarea:focus {
   font-weight: 700;
 }
 
-.translate-prompt-button,
-.clear-prompt-button {
+.prompt-action-button {
   min-height: 42px;
   padding-inline: 12px;
   white-space: nowrap;
@@ -1417,6 +1420,44 @@ textarea:focus {
   padding: 0;
 }
 
+.task-type-badge {
+  position: absolute;
+  z-index: 4;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.task-type-badge.generate {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.task-type-badge.edit {
+  border-color: color-mix(in srgb, var(--warning) 38%, transparent);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.task-type-badge.reverse {
+  border-color: rgba(168, 85, 247, 0.34);
+  background: rgba(168, 85, 247, 0.12);
+  color: #a855f7;
+}
+
 .card-privacy-toggle {
   display: inline-flex;
   width: 30px;
@@ -1540,6 +1581,18 @@ textarea:focus {
   place-items: center;
   gap: 8px;
   color: var(--muted);
+}
+
+.generation-spinner {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: generation-spin 0.9s linear infinite;
+}
+
+@keyframes generation-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .generation-progress strong {
@@ -1836,7 +1889,7 @@ textarea:focus {
 }
 
 .modal-backdrop.lightbox {
-  background: rgba(8, 12, 18, 0.92);
+  background: var(--lightbox-backdrop);
 }
 
 .lightbox-stage {
@@ -2528,5 +2581,10 @@ textarea:focus {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .generation-spinner {
+    animation-duration: 1.8s !important;
+    animation-iteration-count: infinite !important;
   }
 }

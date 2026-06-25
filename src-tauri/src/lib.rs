@@ -65,6 +65,7 @@ struct MultipartRequestPayload {
 struct TaskImageItem {
     b64_json: Option<String>,
     url: Option<String>,
+    mime_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,6 +77,7 @@ struct SaveTaskImagesPayload {
     prompt: String,
     local_created_at: String,
     local_sort_key: Option<String>,
+    task_type: Option<String>,
     data: Vec<TaskImageItem>,
 }
 
@@ -96,6 +98,7 @@ struct LocalImage {
     thumbnail_path: Option<String>,
     thumbnail_data_url: Option<String>,
     prompt: Option<String>,
+    task_type: Option<String>,
     created_at: String,
     local_created_at: String,
     size: u64,
@@ -121,6 +124,8 @@ struct ImageMetadata {
     prompt: String,
     local_created_at: String,
     local_sort_key: Option<String>,
+    #[serde(default)]
+    task_type: Option<String>,
 }
 
 fn app_data_dir<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
@@ -242,7 +247,19 @@ fn image_extension_from_url(url: &str) -> String {
 
 fn extension_for_item(item: &TaskImageItem) -> String {
     if item.b64_json.is_some() {
-        "png".to_string()
+        match item.mime_type.as_deref().unwrap_or("image/png") {
+            "image/jpeg" | "image/jpg" => "jpg".to_string(),
+            "image/webp" => "webp".to_string(),
+            "image/gif" => "gif".to_string(),
+            "image/bmp" => "bmp".to_string(),
+            "image/avif" => "avif".to_string(),
+            "image/svg+xml" => "svg".to_string(),
+            "image/tiff" => "tiff".to_string(),
+            "image/x-icon" | "image/vnd.microsoft.icon" => "ico".to_string(),
+            "image/heic" => "heic".to_string(),
+            "image/heif" => "heif".to_string(),
+            _ => "png".to_string(),
+        }
     } else {
         item.url
             .as_deref()
@@ -422,12 +439,6 @@ fn image_metadata_from_path(path: &Path) -> Option<ImageMetadata> {
         .and_then(|text| serde_json::from_str::<ImageMetadata>(&text).ok())
 }
 
-fn image_prompt_from_metadata(path: &Path) -> Option<String> {
-    image_metadata_from_path(path)
-        .map(|metadata| metadata.prompt)
-        .filter(|prompt| !prompt.trim().is_empty())
-}
-
 fn local_sort_parts(value: &str) -> Option<(i64, i64)> {
     let (batch, rest) = value.split_once('-')?;
     let index = rest.split('-').next().unwrap_or(rest);
@@ -535,7 +546,14 @@ async fn image_item_bytes_with_mime(
     if let Some(b64) = &item.b64_json {
         return general_purpose::STANDARD
             .decode(b64)
-            .map(|bytes| (bytes, "image/png".to_string()))
+            .map(|bytes| {
+                (
+                    bytes,
+                    item.mime_type
+                        .clone()
+                        .unwrap_or_else(|| "image/png".to_string()),
+                )
+            })
             .map_err(|error| format!("解析图片结果失败：{error}"));
     }
     let url = item
@@ -838,6 +856,7 @@ async fn save_task_images(payload: SaveTaskImagesPayload) -> Result<Vec<String>,
             prompt: payload.prompt.clone(),
             local_created_at: payload.local_created_at.clone(),
             local_sort_key: payload.local_sort_key.clone(),
+            task_type: payload.task_type.clone(),
         };
         let metadata_text = serde_json::to_string_pretty(&metadata)
             .map_err(|error| format!("序列化图片提示词失败：{error}"))?;
@@ -860,11 +879,12 @@ async fn hydrate_task_images(
             hydrated.push(item);
             continue;
         }
-        let (bytes, _mime) =
+        let (bytes, mime) =
             image_item_bytes_with_mime(&client, &payload.connection, &item).await?;
         hydrated.push(TaskImageItem {
             b64_json: Some(general_purpose::STANDARD.encode(bytes)),
             url: item.url,
+            mime_type: Some(mime),
         });
     }
     Ok(hydrated)
@@ -978,7 +998,12 @@ fn scan_local_images(
                     .map(|thumbnail_bytes| data_url_from_bytes(&thumbnail_bytes, "image/jpeg"))
             });
         let thumbnail_path = thumbnail_path.map(|value| value.to_string_lossy().to_string());
-        let prompt = image_prompt_from_metadata(&path);
+        let image_metadata = image_metadata_from_path(&path);
+        let prompt = image_metadata
+            .as_ref()
+            .map(|metadata| metadata.prompt.clone())
+            .filter(|value| !value.trim().is_empty());
+        let task_type = image_metadata.and_then(|metadata| metadata.task_type);
         items.push(LocalImage {
             id: format!("local:{rel}"),
             rel,
@@ -987,6 +1012,7 @@ fn scan_local_images(
             thumbnail_path,
             thumbnail_data_url,
             prompt,
+            task_type,
             created_at,
             local_created_at,
             size,

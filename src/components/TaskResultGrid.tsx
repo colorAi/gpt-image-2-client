@@ -14,6 +14,13 @@ function clampGridColumns(value: number) {
   return Math.min(maxGridColumns, Math.max(minGridColumns, Math.round(value)));
 }
 
+function taskTypeInfo(type: "generate" | "edit" | "reverse" | undefined) {
+  if (type === "reverse") return { label: "反推", className: "reverse" };
+  if (type === "edit") return { label: "编辑", className: "edit" };
+  if (type === "generate") return { label: "文生", className: "generate" };
+  return null;
+}
+
 function getInitialGridColumns() {
   if (typeof window === "undefined") return defaultGridColumns;
   const saved = Number(window.localStorage.getItem(gridColumnsStorageKey));
@@ -83,7 +90,7 @@ export default function TaskResultGrid({
       return firstImage ? [{
         id: task.id,
         src: firstImage,
-        title: "生成结果",
+        title: task.taskType === "reverse" ? "反推结果" : "生成结果",
         prompt: task.prompt,
       }] : [];
     }),
@@ -278,6 +285,7 @@ export default function TaskResultGrid({
               const taskError = task.error || (task.localSaveError ? `本地保存失败：${task.localSaveError}` : "");
               const isItemPrivate = privateItemSet.has(task.id);
               const isMasked = isPrivacyMode || isItemPrivate;
+              const typeInfo = taskTypeInfo(task.taskType);
               return (
                 <article className="image-card" key={task.id}>
                   <div className="image-card-header">
@@ -292,6 +300,9 @@ export default function TaskResultGrid({
                     <PrivacyToggle isPrivate={isMasked} isGlobal={isPrivacyMode} onToggle={() => toggleItemPrivacy(task.id)} />
                   </div>
                   <div className="image-frame">
+                    {task.status === "success" && firstImage && typeInfo ? (
+                      <span className={`task-type-badge ${typeInfo.className}`}>{typeInfo.label}</span>
+                    ) : null}
                     <button className={`image-preview ${firstImage ? "" : "placeholder"} ${isMasked && firstImage ? "privacy-masked" : ""}`} onClick={() => firstImage && !isMasked && setLightboxIndex(previewIndexById.get(task.id) ?? null)} disabled={!firstImage}>
                       {firstImage && !isMasked ? <img src={firstImage} alt={task.prompt} /> : null}
                       {firstImage && isMasked ? <PrivacyMask /> : null}
@@ -330,7 +341,7 @@ export default function TaskResultGrid({
                     </button>
                   </div>
                   <div className="image-meta">
-                    <span className={`status-badge ${task.status}`}>{taskStatusLabel(task.status)}</span>
+                    <span className={`status-badge ${task.status}`}>{task.progress === "反推中" || task.progress === "反推失败" ? task.progress : taskStatusLabel(task.status)}</span>
                   </div>
                 </article>
               );
@@ -338,6 +349,7 @@ export default function TaskResultGrid({
             {visibleLocalResults.map((item) => {
               const isItemPrivate = privateItemSet.has(item.id);
               const isMasked = isPrivacyMode || isItemPrivate;
+              const typeInfo = taskTypeInfo(item.taskType);
               return (
                 <article className="image-card local-result-card" key={item.id}>
                   <div className="image-card-header">
@@ -352,6 +364,7 @@ export default function TaskResultGrid({
                     <PrivacyToggle isPrivate={isMasked} isGlobal={isPrivacyMode} onToggle={() => toggleItemPrivacy(item.id)} />
                   </div>
                   <div className="image-frame">
+                    {typeInfo ? <span className={`task-type-badge ${typeInfo.className}`}>{typeInfo.label}</span> : null}
                     <button className={`image-preview ${isMasked ? "privacy-masked" : ""}`} onClick={() => !isMasked && setLightboxIndex(previewIndexById.get(item.id) ?? null)}>
                       {isMasked ? <PrivacyMask /> : <img src={item.url} alt={item.name} />}
                     </button>
@@ -402,7 +415,7 @@ export default function TaskResultGrid({
 function GenerationProgress({ elapsed, label }: { elapsed?: string; label: string }) {
   return (
     <span className="generation-progress" role="status" aria-label={`${label}${elapsed ? `，已运行 ${elapsed}` : ""}`}>
-      <LoaderCircle size={32} className="spin" aria-hidden="true" />
+      <LoaderCircle size={32} className="generation-spinner" aria-hidden="true" />
       <strong>{elapsed || "···"}</strong>
       <small>{label}</small>
     </span>

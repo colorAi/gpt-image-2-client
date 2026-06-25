@@ -1,8 +1,8 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { Image as ImageIcon, Languages, LoaderCircle, Sparkles, Upload, WandSparkles, X } from "lucide-react";
+import { Image as ImageIcon, LoaderCircle, Sparkles, Upload, WandSparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { askPromptAssistant, createApiClient, createEditTask, createGenerationTask, fetchImageTasks, translatePromptText } from "../api";
+import { askPromptAssistant, createApiClient, createEditTask, createGenerationTask, fetchImageTasks, reversePromptFromImages, translatePromptText } from "../api";
 import type { ApiClient } from "../api";
 import { aspectOptions, connectionForChannel, defaultImageModel, maxClientBatchConcurrency, maxClientEditConcurrency, maxPreviewHydrateAttempts, normalizeApiChannel, qualityOptions, resolutionOptions, resolveImageSize, stableSelectionFromSize } from "../constants";
 import type { ApiChannel, ConfirmRequest, ImageResolution, ImageTask, LocalResultRecord, NativeDroppedFile, NativeLocalImagePage, PendingPromptJob, PromptAssistantMessage, PromptQueueStats, SubmitPromptOptions, TaskRecord, Toast } from "../types";
@@ -59,6 +59,7 @@ export default function GenerateView({
   const runningPromptJobIds = useRef(new Set<string>());
   const runningEditPromptJobIds = useRef(new Set<string>());
   const promptQueueReleaseWaiters = useRef(new Map<string, () => void>());
+  const latestReverseBatchId = useRef(0);
   const previewHydrateAttempts = useRef(new Map<string, number>());
   const previewHydrateRetryAfter = useRef(new Map<string, number>());
   const previewHydrateRetryTimers = useRef(new Map<string, number>());
@@ -247,6 +248,7 @@ export default function GenerateView({
           prompt: task.prompt,
           localCreatedAt: task.localCreatedAt,
           localSortKey: task.localSortKey || task.created_at || task.localCreatedAt,
+          taskType: task.taskType,
           data: task.data || [],
         },
       }).then((savedFiles) => {
@@ -385,6 +387,37 @@ export default function GenerateView({
     }
   }, [files.length, notify]);
 
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+      const clipboardData = event.clipboardData;
+      if (!clipboardData) return;
+      const pastedImages = Array.from(clipboardData.items)
+        .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+        .map((item, index) => {
+          const source = item.getAsFile();
+          if (!source) return null;
+          const extension = source.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+          return new File(
+            [source],
+            `clipboard-${new Date().toISOString().replace(/[:.]/g, "-")}-${index + 1}.${extension}`,
+            { type: source.type || "image/png", lastModified: Date.now() },
+          );
+        })
+        .filter((file): file is File => Boolean(file));
+      if (!pastedImages.length) return;
+      event.preventDefault();
+      if (isProcessingReferences) {
+        notify("参考图正在处理中，请稍后再粘贴", "info");
+        return;
+      }
+      void addFiles(pastedImages).then((added) => {
+        if (added) notify("已从剪贴板添加参考图", "success");
+      });
+    };
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [addFiles, isProcessingReferences, notify]);
+
   const addResultAsReference = useCallback(async (src: string, name: string) => {
     if (!src) {
       notify("当前图片还未加载完成", "error");
@@ -473,6 +506,7 @@ export default function GenerateView({
         ...task,
         channel: job.channel,
         prompt: job.prompt,
+        taskType: job.files.length ? "edit" : "generate",
         localCreatedAt: job.localCreatedAt,
         clientTaskId: job.id,
         isLocalPending: false,
@@ -575,6 +609,7 @@ export default function GenerateView({
         created_at: submittedAt.toISOString(),
         updated_at: submittedAt.toISOString(),
         prompt: job.prompt,
+        taskType: job.files.length ? "edit" : "generate",
         localCreatedAt: job.localCreatedAt,
         clientTaskId: job.id,
         isLocalPending: true,
@@ -653,6 +688,78 @@ export default function GenerateView({
 
   const retryTask = useCallback(async (task: TaskRecord) => {
     if (task.status !== "error") return;
+    if (task.taskType === "reverse" || task.progress === "反推失败") {
+      if (!resultDir) {
+        notify("请先在配置中心选择本地结果目录", "error");
+        return;
+      }
+      let sourceImage = task.reverseSourceImage;
+      if (!sourceImage?.dataUrl) {
+        const fallbackFile = files[task.localBatchIndex ?? 0];
+        if (fallbackFile) {
+          sourceImage = {
+            dataUrl: await fileToDataUrl(fallbackFile),
+            name: fallbackFile.name,
+            type: fallbackFile.type || "image/png",
+          };
+        }
+      }
+      if (!sourceImage?.dataUrl) {
+        notify("这条反推任务缺少原始参考图，无法重新反推", "error");
+        return;
+      }
+      const startedAt = Date.now();
+      const startedDate = new Date(startedAt);
+      const sourceFile = fileFromDataUrl(sourceImage.dataUrl, sourceImage.name || `reverse-${task.id}.png`);
+      setTasks((current) => current.map((item) => item.id === task.id ? withRunningTimer({
+        ...item,
+        status: "running",
+        error: undefined,
+        data: undefined,
+        prompt: "",
+        taskType: "reverse",
+        updated_at: startedDate.toISOString(),
+        progress: "反推中",
+        reverseSourceImage: sourceImage,
+      }, startedAt) : item));
+      try {
+        const reversedPrompt = await reversePromptFromImages(api, [sourceFile]);
+        if (!reversedPrompt) throw new Error("AI 没有返回反推提示词");
+        const completedAt = new Date();
+        setTasks((current) => current.map((item) => item.id === task.id ? {
+          ...item,
+          status: "success",
+          updated_at: completedAt.toISOString(),
+          data: [{
+            b64_json: sourceImage.dataUrl.split(",", 2)[1] || "",
+            mime_type: sourceImage.type || sourceFile.type || "image/png",
+          }],
+          prompt: reversedPrompt,
+          taskType: "reverse",
+          progress: "反推完成",
+          runningStartedAt: undefined,
+          runningElapsedBase: undefined,
+          reverseSourceImage: undefined,
+        } : item));
+        setPrompt(reversedPrompt);
+        notify("反推任务已重新完成，正在保存本地结果", "success");
+      } catch (error) {
+        const message = getErrorMessage(error);
+        setTasks((current) => current.map((item) => item.id === task.id ? {
+          ...item,
+          status: "error",
+          updated_at: new Date().toISOString(),
+          error: message,
+          taskType: "reverse",
+          progress: "反推失败",
+          runningStartedAt: undefined,
+          runningElapsedBase: undefined,
+          reverseSourceImage: sourceImage,
+        } : item));
+        notify(message, "error");
+      }
+      return;
+    }
     const retryPrompt = (task.prompt || "").trim();
     if (!retryPrompt) {
       notify("这条任务没有可重新提交的提示词", "error");
@@ -670,7 +777,7 @@ export default function GenerateView({
       quality: task.quality || quality,
       replaceTaskId: task.id,
     });
-  }, [files, model, notify, quality, selectedSize]);
+  }, [api, files, model, notify, quality, resultDir, selectedSize]);
 
   const deleteTasksAndFiles = useCallback(async (taskIds: string[]) => {
     const targets = tasks.filter((task) => taskIds.includes(task.id));
@@ -745,6 +852,102 @@ export default function GenerateView({
       notify(getErrorMessage(error), "error");
     } finally {
       setIsTranslatingPrompt(false);
+    }
+  };
+
+  const reverseCurrentReferences = async () => {
+    if (!resultDir) {
+      notify("请先在配置中心选择本地结果目录", "error");
+      return;
+    }
+    if (!files.length) {
+      notify("请先添加要反推的参考图", "error");
+      return;
+    }
+    const reverseFiles = files.slice();
+    const reverseSources = await Promise.all(reverseFiles.map(async (file) => ({
+      dataUrl: await fileToDataUrl(file),
+      name: file.name,
+      type: file.type || "image/png",
+    })));
+    const startedAt = Date.now();
+    latestReverseBatchId.current = startedAt;
+    const startedDate = new Date(startedAt);
+    const reverseJobs = reverseFiles.map((file, index) => ({
+      file,
+      id: `reverse-${startedAt}-${index}-${Math.random().toString(16).slice(2)}`,
+      index,
+      sourceImage: reverseSources[index],
+    }));
+    const pendingReverseTasks: TaskRecord[] = reverseJobs.map((job) => withRunningTimer({
+      id: job.id,
+      status: "running",
+      mode: "edit",
+      channel: api.connection.channel,
+      model: "auto",
+      created_at: startedDate.toISOString(),
+      updated_at: startedDate.toISOString(),
+      prompt: "",
+      taskType: "reverse",
+      localCreatedAt: startedDate.toLocaleString(),
+      localBatchId: startedAt,
+      localBatchIndex: job.index,
+      localSortKey: localSortKey(startedAt, job.index),
+      progress: "反推中",
+      reverseSourceImage: job.sourceImage,
+    }, startedAt));
+    setTasks((current) => [...pendingReverseTasks.slice().reverse(), ...current].slice(0, 100));
+    const results = await Promise.allSettled(reverseJobs.map(async (job) => {
+      try {
+        const reversedPrompt = await reversePromptFromImages(api, [job.file]);
+        if (!reversedPrompt) throw new Error("AI 没有返回反推提示词");
+        const completedAt = new Date();
+        setTasks((current) => current.map((task) => task.id === job.id ? {
+          ...task,
+          status: "success",
+          updated_at: completedAt.toISOString(),
+          data: [{
+            b64_json: job.sourceImage.dataUrl.split(",", 2)[1] || "",
+            mime_type: job.sourceImage.type || job.file.type || "image/png",
+          }],
+          prompt: reversedPrompt,
+          taskType: "reverse",
+          progress: "反推完成",
+          reverseSourceImage: undefined,
+        } : task));
+        return { index: job.index, prompt: reversedPrompt };
+      } catch (error) {
+        const message = getErrorMessage(error);
+        setTasks((current) => current.map((task) => task.id === job.id ? {
+          ...task,
+          status: "error",
+          updated_at: new Date().toISOString(),
+          error: message,
+          taskType: "reverse",
+          progress: "反推失败",
+          reverseSourceImage: job.sourceImage,
+        } : task));
+        throw error;
+      }
+    }));
+    const successful = results
+      .flatMap((result) => result.status === "fulfilled" ? [result.value] : [])
+      .sort((left, right) => left.index - right.index);
+    const failedCount = results.length - successful.length;
+    if (successful[0] && latestReverseBatchId.current === startedAt) {
+      setPrompt(successful[0].prompt);
+    }
+    setLocalResultDate(localDateString());
+    setLocalResultPage(1);
+    if (successful.length) {
+      notify(
+        failedCount
+          ? `已完成 ${successful.length} 个反推任务，${failedCount} 个失败`
+          : `已完成 ${successful.length} 个反推任务，正在保存本地结果`,
+        failedCount ? "info" : "success",
+      );
+    } else {
+      notify("反推任务全部失败", "error");
     }
   };
 
@@ -859,7 +1062,7 @@ export default function GenerateView({
               )) : (
                 <div className="reference-placeholder">
                   <strong>添加参考图</strong>
-                  <span>点击左侧上传，或把图片拖到这里</span>
+                  <span>点击上传、拖入图片，或按 Ctrl / ⌘ + V 粘贴截图</span>
                 </div>
               )}
             </div>
@@ -873,13 +1076,14 @@ export default function GenerateView({
             ) : (
               <label><span>数量</span><input type="number" min={1} max={4} value={count} disabled={splitSubmit} onChange={(event) => setCount(Math.min(4, Math.max(1, Number(event.target.value) || 1)))} /></label>
             )}
-            <button className="btn translate-prompt-button" type="button" onClick={() => void translateCurrentPrompt()} disabled={!prompt.trim() || isTranslatingPrompt}>
-              {isTranslatingPrompt ? <LoaderCircle size={15} className="spin" /> : <Languages size={15} />}
-              翻译
+            <button className="btn prompt-action-button" type="button" onClick={() => void translateCurrentPrompt()} disabled={!prompt.trim() || isTranslatingPrompt}>
+              {isTranslatingPrompt ? "翻译中" : "翻译"}
             </button>
-            <button className="btn clear-prompt-button" type="button" onClick={() => setPrompt("")} disabled={!prompt.trim()}>
-              <X size={15} />
-              清空提示词
+            <button className="btn prompt-action-button" type="button" onClick={() => void reverseCurrentReferences()} disabled={!files.length || isProcessingReferences || isTranslatingPrompt}>
+              反推
+            </button>
+            <button className="btn prompt-action-button" type="button" onClick={() => setPrompt("")} disabled={!prompt.trim()}>
+              清空
             </button>
           </div>
 

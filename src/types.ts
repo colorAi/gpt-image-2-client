@@ -22,7 +22,7 @@ export type ImageTask = {
   quality?: string;
   created_at: string;
   updated_at: string;
-  data?: Array<{ b64_json?: string; url?: string; revised_prompt?: string }>;
+  data?: Array<{ b64_json?: string; url?: string; revised_prompt?: string; mime_type?: string }>;
   error?: string;
   progress?: string;
   elapsed_secs?: number;
@@ -30,11 +30,12 @@ export type ImageTask = {
 };
 
 export type ImageEditResponse = {
-  data?: Array<{ b64_json?: string; url?: string; revised_prompt?: string }>;
+  data?: Array<{ b64_json?: string; url?: string; revised_prompt?: string; mime_type?: string }>;
 };
 
 export type TaskRecord = ImageTask & {
   prompt: string;
+  taskType?: "generate" | "edit" | "reverse";
   localCreatedAt: string;
   runningStartedAt?: number;
   runningElapsedBase?: number;
@@ -46,6 +47,11 @@ export type TaskRecord = ImageTask & {
   savedFiles?: string[];
   localSaveError?: string;
   previewLoadError?: string;
+  reverseSourceImage?: {
+    dataUrl: string;
+    name: string;
+    type: string;
+  };
 };
 
 export type LocalResultRecord = {
@@ -56,6 +62,7 @@ export type LocalResultRecord = {
   url: string;
   originalUrl: string;
   prompt?: string;
+  taskType?: "generate" | "edit" | "reverse";
   created_at: string;
   localCreatedAt: string;
   size: number;
@@ -76,6 +83,8 @@ export type NativeLocalImage = {
   thumbnailPath?: string;
   thumbnail_path?: string;
   prompt?: string;
+  taskType?: "generate" | "edit" | "reverse";
+  task_type?: "generate" | "edit" | "reverse";
   createdAt?: string;
   created_at?: string;
   localCreatedAt?: string;

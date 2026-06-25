@@ -312,4 +312,36 @@ export async function translatePromptText(api: ReturnType<typeof createApiClient
   return data.choices?.[0]?.message?.content?.trim() || "";
 }
 
+export async function reversePromptFromImages(api: ReturnType<typeof createApiClient>, referenceImages: File[]) {
+  const imageDataUrls = await Promise.all(referenceImages.map(fileToDataUrl));
+  const systemPrompt = [
+    "你是一名图片反推提示词专家。请根据输入图片输出一段可直接用于图像生成的自然语言提示词。",
+    "核心目标是还原主体，而不是写分析报告。优先描述最影响复现的可见信息：主体是谁/是什么、服装或产品样式、颜色、材质、身材或外形轮廓、姿势动作、朝向角度、与周围物体的关系、场景、构图、光线和画面质感。不要编造看不到的元素。输出长度控制在500字左右。",
+    "如果主体是人物，必须优先写清人物性别/年龄感/发型发色、身材比例和体态轮廓、肤色、可见服饰的具体类别、颜色、剪裁、覆盖范围、材质和细节。例如看到黑色比基尼、吊带、抹胸、泳装、外套、短裤、长裙等，必须直接写出，不要用“深色服装”“夏季服饰”等模糊词替代；贴身、露肩、露腰、高腰、低腰、绑带、分体式等可见结构也要写清。",
+    "人物动作要按真实画面还原：身体朝向、肩线和躯干方向、头部转向、脸部朝向、视线方向、手臂和腿部位置、坐姿/站姿/倚靠/半坐/跨坐关系。不要把仅头部转向误写成侧身；不要把正面或半正面写成背面；所有左右方向统一用观看者视角的“画面左侧/画面右侧”。",
+    "景别只需作为简短约束补充，不要喧宾夺主。写明是特写、半身、中景、全身或远景，以及大致裁切到胸部、腰部、大腿、膝盖、脚部或完整主体即可，目的是避免把半身生成成全景。",
+    "如果主体不是人物，不要套用人体术语，改为优先描述该对象的类别、形状结构、颜色材质、表面细节、摆放角度、空间关系和使用场景。",
+    "输出应像一条最终提示词，把关键复现点压缩成一段连贯描述。主体服饰、外形和动作角度必须比环境氛围更靠前、更具体。",
+    "不要说“这张图片”“图片展示了”“I can see”。不要输出解释、标题、编号或 Markdown。",
+    "忽略水印、品牌、界面文字和无关文字，除非文字本身是画面主体。",
+    "不要追加任何平台专属参数、命令或开关。",
+  ].join("\n");
+  const data = await api.request<ChatCompletionResponse>("/v1/chat/completions", {
+    method: "POST",
+    body: {
+      model: "auto",
+      stream: false,
+      modalities: ["text"],
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: promptAssistantContent("请根据所附参考图反推最终图像生成提示词。", imageDataUrls),
+        },
+      ],
+    },
+  });
+  return data.choices?.[0]?.message?.content?.trim() || "";
+}
+
 export type ApiClient = ReturnType<typeof createApiClient>;
