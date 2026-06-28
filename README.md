@@ -113,11 +113,9 @@ npm run version:sync -- 1.2.3
 
 欢迎提交 issue 和 pull request。较大的功能改动建议先开 issue 讨论接口、交互和兼容性，避免重复实现。
 
-贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。安全问题请参考 [SECURITY.md](SECURITY.md)。
-
 ### 许可证
 
-本项目基于 [GNU AGPL-3.0-only](LICENSE) 发布。修改、分发或通过网络提供服务时，请遵守 AGPL-3.0 的源码公开要求；如需闭源集成、私有化交付或商业授权，请联系 HooToo。
+本项目基于 [GNU AGPL-3.0-only](LICENSE) 发布。修改、分发或通过网络提供服务时，请遵守 AGPL-3.0 的源码公开要求；如需闭源集成、私有化交付或商业授权，请联系 409993197（注明来意）。
 
 ## English
 
@@ -230,8 +228,6 @@ Requests use Bearer tokens and are proxied through the Tauri/Rust layer to avoid
 
 Issues and pull requests are welcome. For larger changes, please open an issue first to discuss API behavior, UI flow, and compatibility.
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing. For security reports, see [SECURITY.md](SECURITY.md).
-
 ### License
 
-This project is released under [GNU AGPL-3.0-only](LICENSE). If you modify, distribute, or provide the software over a network, comply with the AGPL-3.0 source disclosure requirements. For closed-source integration, private delivery, or commercial licensing, contact HooToo.
+This project is released under [GNU AGPL-3.0-only](LICENSE). If you modify, distribute, or provide the software over a network, comply with the AGPL-3.0 source disclosure requirements. For closed-source integration, private delivery, or commercial licensing, contact 409993197 and describe your purpose.
