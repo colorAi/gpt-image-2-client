@@ -10,7 +10,6 @@
 
 - 仓库下载：可以在 [GitHub Releases](https://github.com/colorAi/gpt-image-2-client/releases) 页面下载已打包客户端。
 - 网盘下载：<https://pan.quark.cn/s/3da05efbef6e>
-- 源码仓库只提交轻量源码、必要桌面图标和打包快捷脚本，不提交构建产物、安装包、便携包、签名证书或本地打包工程。
 
 ### 功能特性
 
@@ -88,8 +87,6 @@ npm run version:sync -- 1.2.3
 - `build_tauri.command`：构建 macOS `.app` 和 `.dmg`。
 - `build_tauri_windows.command`：在 macOS 上交叉构建 Windows x64 安装包，并复制一份可直接启动的 exe 到 `dist-portable/windows-x64/`。
 
-打包输出目录、安装包、便携包和签名文件不会提交到源码仓库；发布客户端请上传到 Releases 或网盘。
-
 ### 后端接口兼容
 
 客户端默认提供两个 API 渠道，并允许用户在配置中心为每个渠道填写自己的服务地址。如果你要调整接口模式，可以修改：
@@ -130,7 +127,6 @@ Phantom G2 Image Client is a standalone desktop client for image generation work
 
 - Repository downloads: packaged clients can be downloaded from [GitHub Releases](https://github.com/colorAi/gpt-image-2-client/releases).
 - Quark Cloud Drive: <https://pan.quark.cn/s/3da05efbef6e>
-- This repository keeps only lightweight source code, required desktop icons, and build helper scripts. Build outputs, installers, portable packages, signing certificates, and local packaging projects are not committed.
 
 ### Features
 
@@ -207,8 +203,6 @@ Helper scripts are also available:
 
 - `build_tauri.command`: build macOS `.app` and `.dmg`.
 - `build_tauri_windows.command`: cross-build Windows x64 from macOS and copy a portable exe to `dist-portable/windows-x64/`.
-
-Build output directories, installers, portable packages, and signing files are excluded from the source repository. Publish packaged clients through Releases or the cloud drive link.
 
 ### Backend Compatibility
 
