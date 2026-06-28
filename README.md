@@ -1,5 +1,7 @@
 # 幻影G2生图独立客户端
 
+![幻影G2生图独立客户端界面预览](public/G2.png)
+
 语言 / Language: [中文](#中文) | [English](#english)
 
 ## 中文
