@@ -2,10 +2,6 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { activeStatuses, appearanceStorageKey, aspectOptions, maxReferenceImageEdge, maxRunningTaskSeconds, progressTextLabels, promptQueueReleaseProgresses, referenceImageJpegQuality, referenceImageSizeThreshold, taskStatusLabels, terminalStatuses, themeStorageKey } from "./constants";
 import type { AppearanceMode, ImageTask, LocalResultRecord, NativeLocalImage, TaskRecord, ThemeMode } from "./types";
 
-export function normalizeBaseUrl(value: string) {
-  return value.trim().replace(/\/+$/, "");
-}
-
 export function isImageFile(file: File) {
   return file.type.startsWith("image/") || /\.(avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i.test(file.name);
 }
@@ -244,9 +240,16 @@ export function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "请求失败";
 }
 
-export function shouldFallbackToSyncEdit(error: unknown) {
+export function shouldFallbackToSyncImage(error: unknown) {
   const message = getErrorMessage(error).trim().toLowerCase();
-  return message === "internal server error" || message.includes("内部服务错误");
+  return message === "internal server error"
+    || message.includes("内部服务错误")
+    || message.includes("not found")
+    || message.includes("404")
+    || message.includes("method not allowed")
+    || message.includes("cannot post")
+    || message.includes("unsupported")
+    || message.includes("不支持");
 }
 
 export function nativeLocalImageToRecord(item: NativeLocalImage): LocalResultRecord {

@@ -544,6 +544,13 @@ button:disabled {
   margin-bottom: 0;
 }
 
+.channel-support-text {
+  margin: -2px 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .channel-switch {
   display: inline-flex;
   overflow: hidden;
@@ -582,6 +589,19 @@ button:disabled {
   display: grid;
   gap: 7px;
   margin-bottom: 12px;
+}
+
+.url-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  gap: 8px;
+  align-items: center;
+}
+
+.url-input-row .icon-btn {
+  width: 38px;
+  min-height: 38px;
+  padding: 0;
 }
 
 .qr-panel {
@@ -800,12 +820,6 @@ textarea:focus {
 
 .local-status.ok {
   color: var(--success);
-}
-
-.download-link {
-  width: fit-content;
-  margin-top: 12px;
-  text-decoration: none;
 }
 
 .main {

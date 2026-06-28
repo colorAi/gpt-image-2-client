@@ -1,12 +1,14 @@
 export type ApiChannel = "dream" | "stable";
 export type ImageResolution = "1K" | "2K" | "4K";
 export type ApiKeys = Record<ApiChannel, string>;
+export type ApiBaseUrls = Record<ApiChannel, string>;
 
 export type Connection = {
   baseUrl: string;
   apiKey: string;
   channel: ApiChannel;
   apiKeys: ApiKeys;
+  apiBaseUrls: ApiBaseUrls;
 };
 
 export type ThemeMode = "light" | "dark";

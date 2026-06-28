@@ -18,7 +18,6 @@ use walkdir::WalkDir;
 const CONNECTION_FILE: &str = "connection.json";
 const HISTORY_FILE: &str = "tasks.json";
 const SETTINGS_FILE: &str = "settings.json";
-const FIXED_BASE_URL: &str = "https://1kgpt.hootoo.dpdns.org";
 const LEGACY_APP_IDENTIFIER: &str = "com.phantom.image.client";
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -624,7 +623,16 @@ fn load_connection<R: Runtime>(app: tauri::AppHandle<R>) -> Result<Value, String
     let path = app_data_dir(&app)?.join(CONNECTION_FILE);
     Ok(read_json_file(
         &path,
-        json!({ "baseUrl": FIXED_BASE_URL, "apiKey": "", "channel": "dream" }),
+        json!({
+            "baseUrl": "",
+            "apiKey": "",
+            "channel": "dream",
+            "apiKeys": { "dream": "", "stable": "" },
+            "apiBaseUrls": {
+                "dream": "",
+                "stable": ""
+            }
+        }),
     ))
 }
 
@@ -705,7 +713,7 @@ async fn api_request(payload: ApiRequestPayload) -> Result<Value, String> {
     let client = Client::new();
     let base_url = normalize_base_url(&payload.connection.base_url);
     if base_url.is_empty() {
-        return Err("固定服务地址不可用".to_string());
+        return Err("请先填写服务地址".to_string());
     }
     if payload.connection.api_key.trim().is_empty() {
         return Err("请先填写 API Key".to_string());
@@ -747,7 +755,7 @@ async fn api_request(payload: ApiRequestPayload) -> Result<Value, String> {
         || text.trim_start().starts_with("<!DOCTYPE")
         || text.trim_start().starts_with("<html")
     {
-        return Err(format!("接口 {url} 返回了网页 HTML（HTTP {status}，{content_type}）。固定服务地址异常，请检查客户端配置"));
+        return Err(format!("接口 {url} 返回了网页 HTML（HTTP {status}，{content_type}）。服务地址异常，请检查客户端配置"));
     }
     if !status.is_success() {
         return Err(parse_api_error_text(&text));
@@ -763,7 +771,7 @@ async fn api_multipart_request(payload: MultipartRequestPayload) -> Result<Value
     let client = Client::new();
     let base_url = normalize_base_url(&payload.connection.base_url);
     if base_url.is_empty() {
-        return Err("固定服务地址不可用".to_string());
+        return Err("请先填写服务地址".to_string());
     }
     if payload.connection.api_key.trim().is_empty() {
         return Err("请先填写 API Key".to_string());
@@ -809,7 +817,7 @@ async fn api_multipart_request(payload: MultipartRequestPayload) -> Result<Value
         || text.trim_start().starts_with("<!DOCTYPE")
         || text.trim_start().starts_with("<html")
     {
-        return Err(format!("接口 {url} 返回了网页 HTML（HTTP {status}，{content_type}）。固定服务地址异常，请检查客户端配置"));
+        return Err(format!("接口 {url} 返回了网页 HTML（HTTP {status}，{content_type}）。服务地址异常，请检查客户端配置"));
     }
     if !status.is_success() {
         return Err(parse_api_error_text(&text));

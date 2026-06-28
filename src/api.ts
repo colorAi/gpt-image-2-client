@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ChatCompletionResponse, Connection, ImageEditResponse, ImageTask, PromptAssistantMessage } from "./types";
-import { fileToDataUrl, getErrorMessage, promptAssistantContent, shouldFallbackToSyncEdit } from "./utils";
+import { fileToDataUrl, getErrorMessage, promptAssistantContent, shouldFallbackToSyncImage } from "./utils";
 
 export function createApiClient(connection: Connection) {
   async function request<T>(path: string, options: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) {
@@ -44,18 +44,23 @@ export async function createGenerationTask(api: ReturnType<typeof createApiClien
       size: payload.size || "auto",
     };
     if (payload.quality !== "auto") body.quality = payload.quality;
-    const result = await api.request<StableImageTaskResponse>("/v1/images/async/generations", {
-      method: "POST",
-      headers: { "X-Image-Task-ID": payload.clientTaskId },
-      body,
-    });
-    return normalizeStableImageTask(result, {
-      fallbackId: payload.clientTaskId,
-      mode: "generate",
-      model: payload.model,
-      size: payload.size,
-      quality: payload.quality,
-    });
+    try {
+      const result = await api.request<StableImageTaskResponse>("/v1/images/async/generations", {
+        method: "POST",
+        headers: { "X-Image-Task-ID": payload.clientTaskId },
+        body,
+      });
+      return normalizeStableImageTask(result, {
+        fallbackId: payload.clientTaskId,
+        mode: "generate",
+        model: payload.model,
+        size: payload.size,
+        quality: payload.quality,
+      });
+    } catch (error) {
+      if (!shouldFallbackToSyncImage(error)) throw error;
+      return createSyncGenerationTaskFallback(api, payload, error);
+    }
   }
 
   const result = await api.request<ImageTask>("/api/image-tasks/generations", {
@@ -81,19 +86,24 @@ export async function createEditTask(api: ReturnType<typeof createApiClient>, pa
       ["size", payload.size || "auto"],
     ];
     if (payload.quality !== "auto") fields.push(["quality", payload.quality]);
-    const result = await api.multipart<StableImageTaskResponse>(
-      "/v1/images/async/edits",
-      fields,
-      payload.files,
-      { "X-Image-Task-ID": payload.clientTaskId },
-    );
-    return normalizeStableImageTask(result, {
-      fallbackId: payload.clientTaskId,
-      mode: "edit",
-      model: payload.model,
-      size: payload.size,
-      quality: payload.quality,
-    });
+    try {
+      const result = await api.multipart<StableImageTaskResponse>(
+        "/v1/images/async/edits",
+        fields,
+        payload.files,
+        { "X-Image-Task-ID": payload.clientTaskId },
+      );
+      return normalizeStableImageTask(result, {
+        fallbackId: payload.clientTaskId,
+        mode: "edit",
+        model: payload.model,
+        size: payload.size,
+        quality: payload.quality,
+      });
+    } catch (error) {
+      if (!shouldFallbackToSyncImage(error)) throw error;
+      return createSyncEditTaskFallback(api, payload, error, "异步图生图接口");
+    }
   }
 
   const fields: Array<[string, string]> = [
@@ -107,8 +117,45 @@ export async function createEditTask(api: ReturnType<typeof createApiClient>, pa
     const result = await api.multipart<ImageTask>("/api/image-tasks/edits", fields, payload.files);
     return { ...result, channel: "dream" };
   } catch (error) {
-    if (!shouldFallbackToSyncEdit(error)) throw error;
-    return createSyncEditTaskFallback(api, payload, error);
+    if (!shouldFallbackToSyncImage(error)) throw error;
+    return createSyncEditTaskFallback(api, payload, error, "图生图任务接口");
+  }
+}
+
+export async function createSyncGenerationTaskFallback(
+  api: ReturnType<typeof createApiClient>,
+  payload: { clientTaskId: string; prompt: string; model: string; size: string; quality: string },
+  primaryError: unknown,
+): Promise<ImageTask> {
+  const body: Record<string, unknown> = {
+    prompt: payload.prompt,
+    model: payload.model,
+    n: 1,
+    response_format: "url",
+  };
+  if (payload.size) body.size = payload.size;
+  if (payload.quality !== "auto") body.quality = payload.quality;
+  try {
+    const result = await api.request<ImageEditResponse>("/v1/images/generations", {
+      method: "POST",
+      body,
+    });
+    const now = new Date().toISOString();
+    return {
+      id: payload.clientTaskId,
+      status: "success",
+      mode: "generate",
+      channel: api.connection.channel,
+      model: payload.model,
+      size: payload.size,
+      quality: payload.quality,
+      created_at: now,
+      updated_at: now,
+      data: result.data || [],
+      progress: "success",
+    } satisfies ImageTask;
+  } catch (fallbackError) {
+    throw new Error(`异步文生图接口失败：${getErrorMessage(primaryError)}；兼容接口也失败：${getErrorMessage(fallbackError)}`);
   }
 }
 
@@ -116,6 +163,7 @@ export async function createSyncEditTaskFallback(
   api: ReturnType<typeof createApiClient>,
   payload: { clientTaskId: string; files: File[]; prompt: string; model: string; size: string; quality: string },
   primaryError: unknown,
+  primaryLabel = "图生图任务接口",
 ): Promise<ImageTask> {
   const fields: Array<[string, string]> = [
     ["prompt", payload.prompt],
@@ -132,7 +180,7 @@ export async function createSyncEditTaskFallback(
       id: payload.clientTaskId,
       status: "success",
       mode: "edit",
-      channel: "dream",
+      channel: api.connection.channel,
       model: payload.model,
       size: payload.size,
       quality: payload.quality,
@@ -142,7 +190,7 @@ export async function createSyncEditTaskFallback(
       progress: "success",
     } satisfies ImageTask;
   } catch (fallbackError) {
-    throw new Error(`图生图任务接口失败：${getErrorMessage(primaryError)}；兼容接口也失败：${getErrorMessage(fallbackError)}`);
+    throw new Error(`${primaryLabel}失败：${getErrorMessage(primaryError)}；兼容接口也失败：${getErrorMessage(fallbackError)}`);
   }
 }
 

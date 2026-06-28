@@ -324,7 +324,7 @@ export default function GenerateView({
         const responses = await Promise.all(Array.from(targetsByChannel.entries()).map(async ([channel, ids]) => {
           const channelApi = channel === api.connection.channel
             ? api
-            : createApiClient(connectionForChannel(channel, api.connection.apiKeys));
+            : createApiClient(connectionForChannel(channel, api.connection.apiKeys, api.connection.apiBaseUrls));
           return fetchImageTasks(channelApi, ids);
         }));
         if (cancelled) return;
@@ -498,7 +498,7 @@ export default function GenerateView({
     try {
       const jobApi = job.channel === api.connection.channel
         ? api
-        : createApiClient(connectionForChannel(job.channel, api.connection.apiKeys));
+        : createApiClient(connectionForChannel(job.channel, api.connection.apiKeys, api.connection.apiBaseUrls));
       const task = job.files.length
         ? await createEditTask(jobApi, { clientTaskId: job.id, files: job.files, prompt: job.prompt, model: job.model, size: job.size, quality: job.quality })
         : await createGenerationTask(jobApi, { clientTaskId: job.id, prompt: job.prompt, model: job.model, size: job.size, quality: job.quality });

@@ -1,22 +1,20 @@
-import type { ApiChannel, ApiKeys, Connection, ImageResolution, ImageTask } from "./types";
+import type { ApiBaseUrls, ApiChannel, ApiKeys, Connection, ImageResolution, ImageTask } from "./types";
 
-export const fixedBaseUrl = "https://1kgpt.hootoo.dpdns.org";
-export const stableBaseUrl = "https://api.hootoo.dpdns.org";
-export const apiChannelBaseUrls: Record<ApiChannel, string> = {
-  dream: fixedBaseUrl,
-  stable: stableBaseUrl,
+export const defaultApiBaseUrls: ApiBaseUrls = {
+  dream: "",
+  stable: "",
 };
 export const apiChannelOptions: Array<{ value: ApiChannel; label: string; description: string }> = [
-  { value: "dream", label: "畅享版", description: "原有任务接口" },
-  { value: "stable", label: "稳定版", description: "稳定接口与高清分辨率" },
+  { value: "dream", label: "畅享版", description: "支持 chatgpt2api 任务接口" },
+  { value: "stable", label: "稳定版", description: "支持 sub2api，兼容非异步接口" },
 ];
-export const clientDownloadUrl = "https://pan.quark.cn/s/3da05efbef6e";
 export const defaultApiKeys: ApiKeys = { dream: "", stable: "" };
 export const defaultConnection: Connection = {
-  baseUrl: fixedBaseUrl,
+  baseUrl: "",
   apiKey: "",
   channel: "dream",
   apiKeys: defaultApiKeys,
+  apiBaseUrls: defaultApiBaseUrls,
 };
 export const defaultImageModel = "gpt-image-2";
 export const aspectOptions = [
@@ -80,13 +78,34 @@ export function normalizeApiKeys(
   return keys;
 }
 
-export function connectionForChannel(channel: ApiChannel, apiKeys: Partial<ApiKeys> = defaultApiKeys): Connection {
+export function normalizeApiBaseUrls(
+  value: Partial<ApiBaseUrls> | undefined,
+  legacyChannel: ApiChannel = "dream",
+  legacyBaseUrl = "",
+): ApiBaseUrls {
+  const urls = {
+    dream: value?.dream?.trim() || defaultApiBaseUrls.dream,
+    stable: value?.stable?.trim() || defaultApiBaseUrls.stable,
+  };
+  if (legacyBaseUrl.trim()) {
+    urls[legacyChannel] = legacyBaseUrl.trim();
+  }
+  return urls;
+}
+
+export function connectionForChannel(
+  channel: ApiChannel,
+  apiKeys: Partial<ApiKeys> = defaultApiKeys,
+  apiBaseUrls: Partial<ApiBaseUrls> = defaultApiBaseUrls,
+): Connection {
   const normalizedKeys = normalizeApiKeys(apiKeys);
+  const normalizedBaseUrls = normalizeApiBaseUrls(apiBaseUrls);
   return {
     channel,
-    baseUrl: apiChannelBaseUrls[channel],
+    baseUrl: normalizedBaseUrls[channel],
     apiKey: normalizedKeys[channel],
     apiKeys: normalizedKeys,
+    apiBaseUrls: normalizedBaseUrls,
   };
 }
 
@@ -99,6 +118,18 @@ export function connectionWithApiKey(connection: Connection, apiKey: string): Co
     ...connection,
     apiKey,
     apiKeys,
+  };
+}
+
+export function connectionWithBaseUrl(connection: Connection, baseUrl: string): Connection {
+  const apiBaseUrls = {
+    ...connection.apiBaseUrls,
+    [connection.channel]: baseUrl,
+  };
+  return {
+    ...connection,
+    baseUrl,
+    apiBaseUrls,
   };
 }
 

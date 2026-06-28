@@ -1,14 +1,13 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { CheckCircle2, ExternalLink, FolderOpen, KeyRound, Leaf, LoaderCircle, Moon, Paintbrush, Palette, Save, Settings, Sun, X } from "lucide-react";
+import { CheckCircle2, FolderOpen, Globe2, KeyRound, Leaf, LoaderCircle, Moon, Paintbrush, Palette, RotateCcw, Save, Settings, Sun, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createApiClient, fetchImageTasks } from "./api";
 import { FestivalBackdrop, FestivalRailSeal } from "./components/FestivalRail";
 import GenerateView from "./components/GenerateView";
-import { apiChannelOptions, appearanceStorageKey, clientDownloadUrl, connectionForChannel, connectionWithApiKey, defaultConnection, normalizeApiKeys, stableBaseUrl, themeStorageKey } from "./constants";
+import { apiChannelOptions, appearanceStorageKey, connectionForChannel, connectionWithApiKey, connectionWithBaseUrl, defaultApiBaseUrls, defaultConnection, normalizeApiBaseUrls, normalizeApiKeys, themeStorageKey } from "./constants";
 import type { ApiChannel, AppearanceMode, Connection, Model, ThemeMode, Toast } from "./types";
-import { getErrorMessage, getInitialAppearance, getInitialTheme, normalizeBaseUrl } from "./utils";
+import { getErrorMessage, getInitialAppearance, getInitialTheme } from "./utils";
 
 function getChannelLabel(channel: ApiChannel) {
   return channel === "stable" ? "稳定版" : "畅享版";
@@ -16,6 +15,10 @@ function getChannelLabel(channel: ApiChannel) {
 
 function getChannelShortLabel(channel: ApiChannel) {
   return channel === "stable" ? "稳定" : "畅享";
+}
+
+function getChannelSupportText(channel: ApiChannel) {
+  return channel === "stable" ? "支持 sub2api，兼容非异步接口" : "支持 chatgpt2api 任务接口";
 }
 
 export default function App() {
@@ -40,7 +43,7 @@ export default function App() {
   }, []);
 
   const saveConnection = () => {
-    const next = connectionForChannel(draftConnection.channel, draftConnection.apiKeys);
+    const next = connectionForChannel(draftConnection.channel, draftConnection.apiKeys, draftConnection.apiBaseUrls);
     setConnection(next);
     setDraftConnection(next);
     void invoke("save_connection", { value: next }).catch((error) => notify(getErrorMessage(error), "error"));
@@ -48,14 +51,14 @@ export default function App() {
   };
 
   const selectChannel = (channel: ApiChannel) => {
-    setDraftConnection(connectionForChannel(channel, draftConnection.apiKeys));
+    setDraftConnection(connectionForChannel(channel, draftConnection.apiKeys, draftConnection.apiBaseUrls));
     setConnectionState("idle");
     setConnectionMessage("");
   };
 
   const quickSwitchChannel = () => {
     const nextChannel: ApiChannel = draftConnection.channel === "stable" ? "dream" : "stable";
-    const next = connectionForChannel(nextChannel, draftConnection.apiKeys);
+    const next = connectionForChannel(nextChannel, draftConnection.apiKeys, draftConnection.apiBaseUrls);
     setConnection(next);
     setDraftConnection(next);
     setConnectionState("idle");
@@ -123,18 +126,6 @@ export default function App() {
     }
   };
 
-  const openClientDownload = async () => {
-    try {
-      if (isTauri()) {
-        await openUrl(clientDownloadUrl);
-      } else {
-        window.open(clientDownloadUrl, "_blank", "noopener,noreferrer");
-      }
-    } catch (error) {
-      notify(getErrorMessage(error), "error");
-    }
-  };
-
   useEffect(() => {
     void refreshModels();
   }, [refreshModels]);
@@ -156,12 +147,10 @@ export default function App() {
       invoke<{ resultDir?: string | null }>("load_settings"),
     ]).then(([savedConnection, settings]) => {
       if (cancelled) return;
-      const savedChannel: ApiChannel = savedConnection?.channel === "stable"
-        || normalizeBaseUrl(savedConnection?.baseUrl || "") === normalizeBaseUrl(stableBaseUrl)
-        ? "stable"
-        : "dream";
+      const savedChannel: ApiChannel = savedConnection?.channel === "stable" ? "stable" : "dream";
       const apiKeys = normalizeApiKeys(savedConnection?.apiKeys, savedChannel, savedConnection?.apiKey || "");
-      const nextConnection = connectionForChannel(savedChannel, apiKeys);
+      const apiBaseUrls = normalizeApiBaseUrls(savedConnection?.apiBaseUrls, savedChannel, savedConnection?.baseUrl || "");
+      const nextConnection = connectionForChannel(savedChannel, apiKeys, apiBaseUrls);
       setConnection(nextConnection);
       setDraftConnection(nextConnection);
       const savedDir = settings.resultDir || "";
@@ -184,7 +173,6 @@ export default function App() {
   const nextQuickChannel: ApiChannel = draftConnection.channel === "stable" ? "dream" : "stable";
   const currentChannelLabel = getChannelLabel(draftConnection.channel);
   const nextChannelLabel = getChannelLabel(nextQuickChannel);
-
   return (
     <div className="app-shell">
       {appearance === "dragon-boat" ? <FestivalBackdrop /> : null}
@@ -279,6 +267,27 @@ export default function App() {
                     ))}
                   </div>
                 </div>
+                <div className="channel-support-text">{getChannelSupportText(draftConnection.channel)}</div>
+                <label>
+                  <span><Globe2 size={14} />服务地址</span>
+                  <div className="url-input-row">
+                    <input
+                      value={draftConnection.baseUrl}
+                      onChange={(event) => setDraftConnection((current) => connectionWithBaseUrl(current, event.target.value))}
+                      placeholder={draftConnection.channel === "stable" ? "https://your-sub2api.example.com" : "https://your-chatgpt2api.example.com"}
+                      inputMode="url"
+                    />
+                    <button
+                      className="icon-btn"
+                      type="button"
+                      onClick={() => setDraftConnection((current) => connectionWithBaseUrl(current, defaultApiBaseUrls[current.channel]))}
+                      title={`恢复${currentChannelLabel}默认地址`}
+                      aria-label={`恢复${currentChannelLabel}默认地址`}
+                    >
+                      <RotateCcw size={16} />
+                    </button>
+                  </div>
+                </label>
                 <label>
                   <span><KeyRound size={14} />API Key</span>
                   <input value={draftConnection.apiKey} onChange={(event) => setDraftConnection((current) => connectionWithApiKey(current, event.target.value))} placeholder={`${currentChannelLabel} Bearer key`} type="password" />
@@ -302,10 +311,6 @@ export default function App() {
                 <div className={`local-status ${resultDir ? "ok" : ""}`}>
                   {resultDir ? directoryMessage || `已选择：${resultDir}` : "未选择目录时不能提交任务；选择后结果会直接落盘并生成缩略图"}
                 </div>
-                <button className="btn download-link" type="button" onClick={() => void openClientDownload()}>
-                  <ExternalLink size={16} />
-                  没事就瞅一下，万一有新版呢
-                </button>
               </div>
             </div>
 

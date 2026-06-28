@@ -4,6 +4,7 @@ src-tauri/target/
 .DS_Store
 tsconfig.tsbuildinfo
 dist-portable/
+src-tauri/gen/schemas/
 .env
 .env.*
 !.env.example
