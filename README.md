@@ -15,12 +15,14 @@
 
 ### 功能特性
 
-- 文生图：支持 chatgpt2api 任务接口 `/api/image-tasks/generations`。
-- 图生图/编辑：支持点击选择或拖拽上传参考图。
-- sub2api：优先使用 `/v1/images/async/*` 异步接口，也兼容非异步 `/v1/images/*` 接口。
-- 任务轮询：任务提交后进入列表，生成过程中可以继续并发提交。
-- 本地结果：生成成功后按日期落盘，可扫描、预览、删除和复用为参考图。
-- 提示词助手：调用 `/v1/chat/completions` 整理提示词。
+- 文生图与图生图：支持 chatgpt2api 和 sub2api，可在两个渠道间切换。
+- 参考图工作流：支持点击上传、拖拽图片、剪贴板粘贴截图，最多添加 8 张参考图。
+- 本地自动保存：生成成功后按日期保存图片、缩略图、提示词和任务信息。
+- 提示词保留与回填：预览图片时可查看保存的提示词，一键复制或回填到输入框继续修改。
+- 一键加入参考图：任务结果和本地结果都可以直接加入参考图，快速进入图生图/编辑流程。
+- 批量与拆分提交：支持多任务并发、提示词按空行拆分提交，并显示排队与运行状态。
+- AI 提示词助手：整理提示词、提示词中英互译，并可根据参考图反推提示词。
+- 本地结果管理：按日期扫描、分页浏览、预览、删除本地图片。
 - 主题切换：内置默认主题和端午主题。
 
 ### 技术栈
@@ -130,12 +132,14 @@ Phantom G2 Image Client is a standalone desktop client for image generation work
 
 ### Features
 
-- Text-to-image through the chatgpt2api task endpoint `/api/image-tasks/generations`.
-- Image edit workflows with click-to-upload and drag-and-drop reference images.
-- sub2api support through `/v1/images/async/*`, with fallback support for non-async `/v1/images/*` endpoints.
-- Task polling and concurrent submissions.
-- Local result saving, scanning, previewing, deletion, and reuse as reference images.
-- Prompt assistant via `/v1/chat/completions`.
+- Text-to-image and image-to-image workflows for chatgpt2api and sub2api, with quick channel switching.
+- Reference image workflow: upload, drag and drop, or paste screenshots from the clipboard, with up to 8 reference images.
+- Automatic local saving: successful results are saved by date with thumbnails, prompts, and task metadata.
+- Prompt preservation and reuse: view saved prompts in the preview, then copy or fill them back into the editor.
+- One-click reference reuse: add task results or local results directly as reference images for image edits.
+- Batch and split submission: run concurrent tasks, split prompts by blank lines, and track queued/running status.
+- AI prompt tools: prompt cleanup, Chinese/English translation, and image-to-prompt reverse prompting from references.
+- Local result management: scan by date, browse with pagination, preview, and delete local images.
 - Built-in default and Dragon Boat themes.
 
 ### Stack
